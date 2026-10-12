@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sound Board</title>
+<style>
+:root {
+  --bg: #0f1512; --panel: #17201b; --panel2: #1e2a23; --line: #2c3a32;
+  --text: #e9efe9; --muted: #95a59b; --accent: #f2c14e; --good: #5fd08a; --bad: #ff7a66; --swap: #6fb0ff;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 5; background: rgba(15,21,18,.94); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
+.bar { max-width: 1100px; margin: 0 auto; padding: 12px 16px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+h1 { font-size: 18px; margin: 0; letter-spacing: .02em; }
+h1 span { color: var(--accent); }
+.status { color: var(--muted); font-size: 13px; }
+.spacer { flex: 1; }
+label.vol { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; }
+main { max-width: 1100px; margin: 0 auto; padding: 8px 16px 80px; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 28px 0 10px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.card.liked { border-color: color-mix(in srgb, var(--good) 60%, var(--line)); }
+.card.change { border-color: color-mix(in srgb, var(--bad) 60%, var(--line)); }
+.card.swapped { box-shadow: inset 3px 0 0 var(--swap); }
+.title { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.title b { font-size: 16px; }
+.title code { color: var(--muted); font-size: 12px; }
+.when { color: var(--muted); font-size: 13px; margin: -4px 0 0; }
+.btns { display: flex; gap: 6px; flex-wrap: wrap; }
+button { font: inherit; font-size: 13px; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button.play { background: var(--accent); color: #231a02; border-color: transparent; font-weight: 600; }
+button.play:hover { filter: brightness(1.08); }
+button.on-like { background: var(--good); color: #062612; border-color: transparent; }
+button.on-change { background: var(--bad); color: #2a0e0b; border-color: transparent; }
+.layer { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; }
+.layer .lab { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+.layer.changed .lab { color: var(--swap); }
+select { font: inherit; font-size: 13px; width: 100%; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+.layer.changed select { border-color: var(--swap); }
+.verdict { display: flex; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.verdict button { flex: 1; }
+.lib { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.clip { display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; cursor: pointer; text-align: left; }
+.clip:hover { border-color: var(--accent); }
+.clip .dot { width: 28px; height: 28px; flex: none; border-radius: 50%; background: var(--accent); color: #231a02; display: grid; place-items: center; font-size: 11px; }
+.clip small { display: block; color: var(--muted); font-size: 12px; }
+.summary { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.summary pre { white-space: pre-wrap; margin: 0 0 12px; font: 13px/1.5 ui-monospace, Consolas, monospace; color: var(--text); }
+.hint { color: var(--muted); font-size: 13px; }
+@media (max-width: 520px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>Pick of the Roll · <span>Sound Board</span></h1>
+    <span class="status" id="status">Loading sounds…</span>
+    <span class="spacer"></span>
+    <label class="vol">Volume <input type="range" id="vol" min="0" max="1.5" step="0.05" value="0.9"></label>
+    <button id="stopAll">Stop all</button>
+    <button id="resetAll">Reset all</button>
+  </div>
+</header>
+<main>
+  <p class="hint">Each card is one moment in the game. <b>Play</b> it exactly as the game does, pick a different clip from the dropdown to try a swap, then mark it <b>Keep</b> or <b>Change</b>. Your choices are saved in this browser and collected in the summary at the bottom.</p>
+  <div id="events"></div>
+  <h2>All 29 clips</h2>
+  <div class="lib" id="lib"></div>
+  <h2>Your choices</h2>
+  <div class="summary">
+    <pre id="summary"></pre>
+    <button class="play" id="copy">Copy summary</button>
+    <span class="hint" id="copied"></span>
+  </div>
+</main>
+
+<script src="image-ranker-sounds.js"></script>
+<script>
+// ---------- engine: same decode, loudness matching and playback as image-ranker.html ----------
+const data = window.RANKER_SOUNDS;
+const clips = new Map();
+const live = new Set();
+let ctx = null, out = null;
+
+function measure(buf) {
+  const x = buf.getChannelData(0), sr = buf.sampleRate, n = x.length;
+  let pk = 0;
+  for (let i = 0; i < n; i++) { const a = Math.abs(x[i]); if (a > pk) pk = a; }
+  let lead = 0;
+  while (lead < n && Math.abs(x[lead]) < pk * 0.03) lead++;
+  const w = Math.min(n, Math.round(0.05 * sr));
+  let acc = 0, best = 0;
+  for (let i = 0; i < n; i++) {
+    acc += x[i] * x[i];
+    if (i >= w) acc -= x[i - w] * x[i - w];
+    if (acc > best) best = acc;
+  }
+  const rms = Math.sqrt(best / w) || 0.1;
+  return { buf, lead: Math.max(0, lead / sr - 0.004), norm: Math.min(4, 0.12 / rms) };
+}
+function audio() {
+  if (!ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    ctx = new AC({ latencyHint: 'interactive' });
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.knee.value = 10; comp.ratio.value = 3;
+    comp.attack.value = 0.003; comp.release.value = 0.15;
+    comp.connect(ctx.destination);
+    out = ctx.createGain();
+    out.gain.value = +document.getElementById('vol').value;
+    out.connect(comp);
+  }
+  if (ctx.state === 'suspended') ctx.resume();
+  return ctx;
+}
+function reversed(name) {
+  const key = name + ':reversed';
+  if (!clips.has(key)) {
+    const c = clips.get(name);
+    if (!c) return null;
+    const s = c.buf.getChannelData(0);
+    const rb = new AudioBuffer({ length: s.length, sampleRate: c.buf.sampleRate, numberOfChannels: 1 });
+    const d = rb.getChannelData(0);
+    for (let i = 0; i < s.length; i++) d[i] = s[s.length - 1 - i];
+    clips.set(key, measure(rb));
+  }
+  return key;
+}
+function play(name, { gain = 1, pan = 0, rate = 1, at = 0, dur = 0, lowpass = 0 } = {}) {
+  const c = clips.get(name);
+  if (!c) return;
+  const ac = audio();
+  const src = ac.createBufferSource();
+  src.buffer = c.buf;
+  src.playbackRate.value = rate;
+  let node = src;
+  if (lowpass) {
+    const f = ac.createBiquadFilter();
+    f.type = 'lowpass'; f.frequency.value = lowpass; f.Q.value = 0.5;
+    node.connect(f); node = f;
+  }
+  const g = ac.createGain();
+  const level = gain * c.norm;
+  g.gain.value = level;
+  node.connect(g); node = g;
+  if (pan && ac.createStereoPanner) {
+    const p = ac.createStereoPanner();
+    p.pan.value = Math.max(-1, Math.min(1, pan));
+    node.connect(p); node = p;
+  }
+  node.connect(out);
+  const t = ac.currentTime + 0.002 + at;
+  if (dur) {
+    g.gain.setValueAtTime(level, t + Math.max(0, dur - 0.3));
+    g.gain.linearRampToValueAtTime(0.0001, t + dur);
+    src.start(t, c.lead, dur + 0.02);
+  } else {
+    src.start(t, c.lead);
+  }
+  live.add(src);
+  src.onended = () => live.delete(src);
+}
+const any = names => names[Math.floor(Math.random() * names.length)];
+const vary = (spread = 0.06) => 1 - spread / 2 + Math.random() * spread;
+const timers = new Set();
+function later(ms, fn) { const id = setTimeout(() => { timers.delete(id); fn(); }, ms); timers.add(id); }
+
+// ---------- the game's sound moments (mirrors the sfx object in image-ranker.html) ----------
+// Each layer is one clip slot you can swap. opts are the game's own settings for that slot.
+const EVENTS = [
+  { group: 'Voting', id: 'pick', name: 'Pick an image', fn: 'sfx.pick',
+    when: 'You choose one of the two images. The most-heard sound in the game.',
+    layers: [
+      { key: 'chip', label: 'Chip on felt', pool: ['chip-lay-1', 'chip-lay-2', 'chip-lay-3'], opts: { gain: 0.55, lowpass: 5500, vary: 0.06, panMul: 0.5 } },
+      { key: 'note', label: 'Rising note (combo 3 and up)', pool: ['drop-rise'], opts: { gain: 0.3, at: 0.02, panMul: 0.7 } },
+    ],
+    buttons: [
+      { label: 'Play', main: true, run: L => pick(L, 0, -0.4) },
+      { label: 'Combo 5', run: L => pick(L, 5, 0.4) },
+      { label: 'Burst run 1→9', run: L => { for (let i = 1; i <= 9; i++) later((i - 1) * 380, () => pick(L, i, i % 2 ? -0.4 : 0.4)); } },
+    ] },
+  { group: 'Voting', id: 'tie', name: 'Tie', fn: 'sfx.tie', when: 'You call the two images equal.',
+    layers: [{ key: 'a', label: 'Chips clack', pool: ['chips-collide-1', 'chips-collide-2', 'chips-collide-3', 'chips-collide-4'], opts: { gain: 0.5, vary: 0.06 } }] },
+  { group: 'Voting', id: 'skip', name: 'Skip', fn: 'sfx.skip', when: 'You skip a matchup.',
+    layers: [{ key: 'a', label: 'Card slides away', pool: ['card-slide-2', 'card-slide-3', 'card-slide-5'], opts: { gain: 0.5, vary: 0.06 } }] },
+  { group: 'Voting', id: 'rewind', name: 'Undo', fn: 'sfx.rewind', when: 'You undo the last vote (also when restoring a removed image).',
+    layers: [{ key: 'a', label: 'Chip picked back up', pool: ['chips-handle-6'], opts: { gain: 0.55 } }] },
+
+  { group: 'Combo / burst', id: 'powerOn', name: 'Burst starts', fn: 'sfx.powerOn', when: 'A combo streak powers up.',
+    layers: [{ key: 'a', label: 'Rattle of chips', pool: ['chips-handle-3'], opts: { gain: 0.5 } }] },
+  { group: 'Combo / burst', id: 'clock', name: 'Burst clock', fn: 'sfx.clock', when: 'Ticks while the burst timer runs down, louder near the end.',
+    layers: [
+      { key: 'tick', label: 'Tick', pool: ['click-hi'], opts: { gain: 0.35 } },
+      { key: 'tock', label: 'Tock', pool: ['click-lo'], opts: { gain: 0.35 } },
+    ],
+    buttons: [{ label: 'Play 8 ticks', main: true, run: L => { for (let i = 0; i < 8; i++) later(i * 420, () => L[i % 2 ? 'tock' : 'tick']({ gain: 0.35 + 0.25 * (i / 7) })); } }] },
+  { group: 'Combo / burst', id: 'tierUp', name: 'Combo stage up', fn: 'sfx.tierUp', when: 'The combo reaches a new stage (the fire changes colour).',
+    layers: [
+      { key: 'coins', label: 'Coins', pool: ['coins'], opts: { gain: 0.75 } },
+      { key: 'stack', label: 'Chips stacked', pool: ['chips-stack-3'], opts: { gain: 0.5, at: 0.03 } },
+    ],
+    buttons: [
+      { label: 'Play', main: true, run: L => { L.coins(); L.stack(); } },
+      { label: 'Top stage', run: L => { L.coins(); L.stack({ rate: 1.06 }); } },
+    ] },
+  { group: 'Combo / burst', id: 'chime', name: 'Round number / sound on', fn: 'sfx.chime', when: 'The combo hits a round number, and when you turn sound on.',
+    layers: [{ key: 'a', label: 'Confirm chime', pool: ['confirm'], opts: { gain: 0.5 } }] },
+  { group: 'Combo / burst', id: 'newBest', name: 'New best combo', fn: 'sfx.newBest', when: 'You beat your best streak.',
+    layers: [
+      { key: 'jingle', label: 'Jingle', pool: ['jingle-best'], opts: { gain: 0.7 } },
+      { key: 'coins', label: 'Coins', pool: ['coins-small'], opts: { gain: 0.6, at: 0.05 } },
+    ] },
+  { group: 'Combo / burst', id: 'fizzle', name: 'Combo breaks', fn: 'sfx.fizzle', when: 'The streak runs out and the fire goes out.',
+    layers: [{ key: 'a', label: 'Played backwards', pool: ['drop-rise'], opts: { gain: 0.3, rate: 0.8, reversed: true } }] },
+
+  { group: 'Progress', id: 'milestone', name: 'Milestone 25 / 50 / 75 %', fn: 'sfx.milestone(false)', when: 'Ranking confidence passes 25, 50 or 75 %.',
+    layers: [{ key: 'a', label: 'Jingle', pool: ['jingle-up'], opts: { gain: 0.7 } }] },
+  { group: 'Progress', id: 'milestoneBig', name: 'Milestone 100 % / list done', fn: 'sfx.milestone(true)', when: 'Ranking reaches 100 %, or you finish placing a list.',
+    layers: [
+      { key: 'jingle', label: 'Big jingle', pool: ['jingle-big'], opts: { gain: 0.7 } },
+      { key: 'coins', label: 'Coins after', pool: ['coins'], opts: { gain: 0.55, at: 0.55 } },
+    ] },
+
+  { group: 'Images & lists', id: 'loaded', name: 'Images added', fn: 'sfx.loaded', when: 'New images are loaded in.',
+    layers: [{ key: 'a', label: 'Cards fanned', pool: ['card-fan-1'], opts: { gain: 0.6 } }] },
+  { group: 'Images & lists', id: 'shuffle', name: 'New list created', fn: 'sfx.shuffle', when: 'You make a new list from your top images.',
+    layers: [{ key: 'a', label: 'Deck shuffle (first 1.3 s)', pool: ['card-shuffle'], opts: { gain: 0.6, dur: 1.3 } }] },
+  { group: 'Images & lists', id: 'tear', name: 'Remove an image', fn: 'sfx.tear', when: 'An image is removed.',
+    layers: [{ key: 'a', label: 'Pack torn open', pool: ['cards-pack-open-2'], opts: { gain: 0.65 } }] },
+  { group: 'Images & lists', id: 'arm', name: 'Remove mode on', fn: 'sfx.arm', when: 'You switch on remove mode.',
+    layers: [{ key: 'a', label: 'Latch', pool: ['latch'], opts: { gain: 0.55 } }] },
+  { group: 'Images & lists', id: 'disarm', name: 'Remove mode off', fn: 'sfx.disarm', when: 'You leave remove mode.',
+    layers: [{ key: 'a', label: 'Low click', pool: ['click-lo'], opts: { gain: 0.4 } }] },
+
+  { group: 'Browsing', id: 'slide', name: 'Viewer: next / jump', fn: 'sfx.slide', when: 'Opening the full-screen viewer or jumping to another image in it.',
+    layers: [{ key: 'a', label: 'Page flip', pool: ['page-flip'], opts: { gain: 0.45, vary: 0.08 } }] },
+  { group: 'Browsing', id: 'step', name: 'Detail: prev / next', fn: 'sfx.step', when: 'Stepping between images in the detail panel.',
+    layers: [{ key: 'a', label: 'Select blip', pool: ['select'], opts: { gain: 0.35, vary: 0.08 } }] },
+  { group: 'Browsing', id: 'tick', name: 'Menu / tab click', fn: 'sfx.tick', when: 'Switching Vote/Ranking, opening menus, changing layout.',
+    layers: [{ key: 'a', label: 'UI click', pool: ['click-ui'], opts: { gain: 0.3, vary: 0.1 } }] },
+];
+
+function pick(L, level, pan) {
+  L.chip({ pan });
+  if (level >= 3) {
+    const steps = [0, 2, 4, 7, 9, 12, 14];
+    L.note({ pan, rate: 0.8 * Math.pow(2, steps[Math.min(level - 3, steps.length - 1)] / 12) });
+  }
+}
+
+const CLIP_INFO = {
+  'chip-lay-1': 'single chip set down', 'chip-lay-2': 'single chip set down', 'chip-lay-3': 'single chip set down',
+  'chips-collide-1': 'chips clacking', 'chips-collide-2': 'chips clacking', 'chips-collide-3': 'chips clacking', 'chips-collide-4': 'chips clacking',
+  'chips-handle-3': 'handful of chips', 'chips-handle-6': 'handful of chips', 'chips-stack-3': 'chips stacked',
+  'card-slide-2': 'card sliding', 'card-slide-3': 'card sliding', 'card-slide-5': 'card sliding',
+  'card-fan-1': 'cards fanned out', 'card-shuffle': 'deck shuffle', 'cards-pack-open-2': 'card pack torn open',
+  'drop-rise': 'rising bloop', 'click-hi': 'clock tick', 'click-lo': 'clock tock', 'click-ui': 'UI click',
+  'select': 'select blip', 'confirm': 'confirm chime', 'latch': 'latch', 'coins': 'coins', 'coins-small': 'a few coins',
+  'page-flip': 'page flip', 'jingle-up': 'steel-drum jingle', 'jingle-big': 'big steel-drum jingle', 'jingle-best': 'steel-drum fanfare',
+};
+const ALL = Object.keys(data ? data.clips : CLIP_INFO);
+const ORIG = '__orig__';
+
+// ---------- saved choices ----------
+let state = {};
+try { state = JSON.parse(localStorage.getItem('ranker-soundboard') || '{}'); } catch (_) { state = {}; }
+function save() { try { localStorage.setItem('ranker-soundboard', JSON.stringify(state)); } catch (_) {} renderSummary(); }
+const st = id => (state[id] ||= { swaps: {}, verdict: '' });
+
+// Build the playable layers for an event, using any swaps chosen.
+function layersFor(ev) {
+  const L = {};
+  for (const ly of ev.layers) {
+    L[ly.key] = (extra = {}) => {
+      const chosen = st(ev.id).swaps[ly.key];
+      let name = chosen ? chosen : any(ly.pool);
+      const o = ly.opts;
+      if (o.reversed) name = reversed(name);
+      if (!name) return;
+      const rate = (extra.rate ?? o.rate ?? 1) * (o.vary ? vary(o.vary) : 1);
+      play(name, {
+        gain: extra.gain ?? o.gain, at: o.at || 0, dur: o.dur || 0, lowpass: o.lowpass || 0,
+        pan: (extra.pan || 0) * (o.panMul ?? 0.5), rate,
+      });
+    };
+  }
+  return L;
+}
+function defaultRun(L, ev) { for (const ly of ev.layers) L[ly.key](); }
+
+// ---------- UI ----------
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function poolLabel(pool) { return pool.length > 1 ? `${pool.join(', ')} (random)` : pool[0]; }
+
+function renderEvents() {
+  const root = document.getElementById('events');
+  const groups = [...new Set(EVENTS.map(e => e.group))];
+  root.innerHTML = groups.map(g => `<h2>${esc(g)}</h2><div class="grid">${EVENTS.filter(e => e.group === g).map(ev => {
+    const s = st(ev.id);
+    const btns = ev.buttons || [{ label: 'Play', main: true }];
+    return `<div class="card" data-ev="${ev.id}">
+      <div class="title"><b>${esc(ev.name)}</b><code>${esc(ev.fn)}</code></div>
+      <p class="when">${esc(ev.when)}</p>
+      <div class="btns">${btns.map((b, i) => `<button class="${b.main ? 'play' : ''}" data-btn="${i}">${b.main ? '▶ ' : ''}${esc(b.label)}</button>`).join('')}</div>
+      ${ev.layers.map(ly => `<div class="layer" data-layer="${ly.key}">
+        <span class="lab">${esc(ly.label)}</span>
+        <select data-sel="${ly.key}">
+          <option value="${ORIG}">Current: ${esc(poolLabel(ly.pool))}</option>
+          <optgroup label="Swap to…">${ALL.map(n => `<option value="${n}"${s.swaps[ly.key] === n ? ' selected' : ''}>${n} · ${esc(CLIP_INFO[n] || '')}</option>`).join('')}</optgroup>
+        </select>
+        <button data-solo="${ly.key}" title="Hear just this slot">▶</button>
+      </div>`).join('')}
+      <div class="verdict">
+        <button data-verdict="keep">👍 Keep</button>
+        <button data-verdict="change">🔁 Change</button>
+      </div>
+    </div>`;
+  }).join('')}</div>`).join('');
+  EVENTS.forEach(refreshCard);
+}
+function refreshCard(ev) {
+  const card = document.querySelector(`[data-ev="${ev.id}"]`);
+  const s = st(ev.id);
+  let swapped = false;
+  card.querySelectorAll('.layer').forEach(el => {
+    const on = !!s.swaps[el.dataset.layer];
+    swapped ||= on;
+    el.classList.toggle('changed', on);
+  });
+  card.classList.toggle('swapped', swapped);
+  card.classList.toggle('liked', s.verdict === 'keep');
+  card.classList.toggle('change', s.verdict === 'change');
+  card.querySelector('[data-verdict="keep"]').classList.toggle('on-like', s.verdict === 'keep');
+  card.querySelector('[data-verdict="change"]').classList.toggle('on-change', s.verdict === 'change');
+}
+
+document.getElementById('events').addEventListener('click', e => {
+  const card = e.target.closest('[data-ev]');
+  if (!card) return;
+  const ev = EVENTS.find(x => x.id === card.dataset.ev);
+  const b = e.target.closest('button');
+  if (!b) return;
+  const L = layersFor(ev);
+  if (b.dataset.btn != null) {
+    const def = (ev.buttons || [])[+b.dataset.btn];
+    def && def.run ? def.run(L) : defaultRun(L, ev);
+  } else if (b.dataset.solo) {
+    L[b.dataset.solo]({});
+  } else if (b.dataset.verdict) {
+    const s = st(ev.id);
+    s.verdict = s.verdict === b.dataset.verdict ? '' : b.dataset.verdict;
+    refreshCard(ev); save();
+  }
+});
+document.getElementById('events').addEventListener('change', e => {
+  const sel = e.target.closest('select[data-sel]');
+  if (!sel) return;
+  const ev = EVENTS.find(x => x.id === sel.closest('[data-ev]').dataset.ev);
+  const s = st(ev.id);
+  if (sel.value === ORIG) delete s.swaps[sel.dataset.sel]; else s.swaps[sel.dataset.sel] = sel.value;
+  refreshCard(ev); save();
+  layersFor(ev)[sel.dataset.sel]({});   // hear the new pick right away
+});
+
+function renderLib() {
+  const usedBy = {};
+  for (const ev of EVENTS) for (const ly of ev.layers) for (const n of ly.pool) (usedBy[n] ||= []).push(ev.name);
+  document.getElementById('lib').innerHTML = ALL.map(n => {
+    const c = clips.get(n);
+    const len = c ? (c.buf.duration - c.lead).toFixed(2) + ' s' : '';
+    return `<button class="clip" data-clip="${n}"><span class="dot">▶</span><span><b>${n}</b>
+      <small>${esc(CLIP_INFO[n] || '')}${len ? ' · ' + len : ''}</small>
+      <small>${usedBy[n] ? 'Used by: ' + esc(usedBy[n].join(', ')) : 'Not used yet'}</small></span></button>`;
+  }).join('');
+}
+document.getElementById('lib').addEventListener('click', e => {
+  const b = e.target.closest('[data-clip]');
+  if (b) play(b.dataset.clip, { gain: 0.6 });
+});
+
+function renderSummary() {
+  const keep = [], change = [], swaps = [], open = [];
+  for (const ev of EVENTS) {
+    const s = st(ev.id);
+    for (const ly of ev.layers) {
+      if (s.swaps[ly.key]) swaps.push(`- ${ev.name} (${ev.fn}) · ${ly.label}: ${poolLabel(ly.pool)} → ${s.swaps[ly.key]}`);
+    }
+    if (s.verdict === 'keep') keep.push(ev.name);
+    else if (s.verdict === 'change') (Object.keys(s.swaps).length ? change : open).push(ev.name);
+  }
+  const lines = [];
+  lines.push('SWAPS I WANT:', swaps.length ? swaps.join('\n') : '- (none yet)', '');
+  if (open.length) lines.push('WANT CHANGED, NO REPLACEMENT PICKED YET:', ...open.map(n => '- ' + n), '');
+  lines.push('KEEP AS IS:', keep.length ? keep.map(n => '- ' + n).join('\n') : '- (none marked yet)');
+  const undecided = EVENTS.filter(ev => !st(ev.id).verdict && !Object.keys(st(ev.id).swaps).length).map(ev => ev.name);
+  if (undecided.length) lines.push('', `Not reviewed yet (${undecided.length}): ${undecided.join(', ')}`);
+  document.getElementById('summary').textContent = lines.join('\n');
+}
+document.getElementById('copy').addEventListener('click', async () => {
+  const txt = document.getElementById('summary').textContent;
+  try { await navigator.clipboard.writeText(txt); document.getElementById('copied').textContent = ' Copied. Paste it to Claude.'; }
+  catch (_) { document.getElementById('copied').textContent = ' Could not copy; select the text above instead.'; }
+});
+document.getElementById('vol').addEventListener('input', e => { if (out) out.gain.value = +e.target.value; });
+document.getElementById('stopAll').addEventListener('click', () => {
+  timers.forEach(clearTimeout); timers.clear();
+  live.forEach(s => { try { s.stop(); } catch (_) {} }); live.clear();
+});
+document.getElementById('resetAll').addEventListener('click', () => {
+  if (!confirm('Clear all swaps and Keep/Change marks?')) return;
+  state = {}; save(); renderEvents();
+});
+
+// ---------- load ----------
+renderEvents(); renderLib(); renderSummary();
+const status = document.getElementById('status');
+if (!data) {
+  status.textContent = 'image-ranker-sounds.js not found. Keep this page in the same folder.';
+} else {
+  const dec = new OfflineAudioContext(1, 1, 44100);
+  const names = Object.keys(data.clips);
+  let done = 0;
+  Promise.all(names.map(name => {
+    const bin = atob(data.clips[name]), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return dec.decodeAudioData(bytes.buffer).then(buf => { clips.set(name, measure(buf)); done++; }, () => {});
+  })).then(() => {
+    status.textContent = `${done} of ${names.length} clips ready`;
+    renderLib();
+  });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,2262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Image Ranker</title>
+<style>
+:root {
+  --bg: #0e1014;
+  --surface: #161920;
+  --surface-2: #1d212a;
+  --surface-3: #252a35;
+  --border: #2a2f3b;
+  --text: #e9ebf1;
+  --muted: #98a1b3;
+  --faint: #646d7e;
+  --accent: #7c9cff;
+  --win: #3ecf8e;
+  --lose: #ef5b5b;
+  --tie: #f0b429;
+  --radius: 12px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+button { font: inherit; color: inherit; }
+kbd {
+  font: 600 11px/1 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 3px 6px;
+  color: var(--text);
+}
+[hidden] { display: none !important; }
+
+/* ---------- header ---------- */
+header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-wrap: wrap;
+}
+.brand { font-weight: 700; font-size: 15px; letter-spacing: .2px; display: flex; align-items: center; gap: 8px; }
+.brand svg { color: var(--accent); }
+.progress { flex: 1; min-width: 220px; max-width: 460px; margin: 0 auto; }
+.progress-top { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 5px; gap: 12px; }
+.progress-top b { color: var(--text); font-weight: 600; }
+.progress.placing .progress-top { color: #d7b8ff; }
+.p-stop {
+  margin-left: 8px; padding: 0 7px; font-size: 11px; line-height: 17px;
+  background: none; border: 1px solid rgba(199,146,255,.4); border-radius: 99px; color: #d7b8ff; cursor: pointer;
+}
+.p-stop:hover { background: rgba(199,146,255,.15); }
+.bar { height: 6px; background: var(--surface-3); border-radius: 99px; overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .3s ease, background-color .3s; }
+.actions { display: flex; gap: 8px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, border-color .12s;
+}
+.btn:hover { background: var(--surface-3); border-color: #3a4152; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #0e1014; font-weight: 600; }
+.btn.primary:hover { background: #95afff; }
+.btn.danger { color: var(--lose); }
+.btn.danger:hover { border-color: var(--lose); }
+.btn kbd { padding: 2px 5px; }
+
+main { min-height: 0; position: relative; }
+.view { height: 100%; }
+
+/* ---------- empty / drop ---------- */
+#empty { display: grid; place-items: center; padding: 16px; }
+.dropzone {
+  width: min(560px, 100%);
+  padding: 56px 24px;
+  border: 2px dashed var(--border);
+  border-radius: 18px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--surface);
+  transition: border-color .15s, background .15s;
+}
+.dropzone:hover { border-color: var(--accent); background: var(--surface-2); }
+.dropzone svg { color: var(--accent); margin-bottom: 12px; }
+.dropzone h2 { margin: 0 0 6px; font-size: 20px; }
+.dropzone p { margin: 0; color: var(--muted); }
+.dropzone .small { margin-top: 18px; font-size: 12px; color: var(--faint); }
+
+/* ---------- vote ---------- */
+.arena {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 14px;
+  padding: 16px;
+}
+.side {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  cursor: pointer;
+  transition: transform .16s ease, opacity .16s ease;
+}
+.frame {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: border-color .16s, box-shadow .16s;
+}
+.frame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.side:hover .frame { border-color: #3d4458; }
+.side-key { position: absolute; bottom: 10px; left: 10px; opacity: .75; }
+#sideR .side-key { left: auto; right: 10px; }
+.side figcaption {
+  margin-top: 8px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vs-wrap { position: relative; z-index: 3; align-self: center; justify-self: center; display: grid; place-items: center; }
+.vs {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--faint);
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+}
+/* ---------- juice: vote feedback ---------- */
+.side:hover .frame { box-shadow: 0 8px 30px rgba(0,0,0,.35); }
+.side:active .frame { transform: scale(.992); }
+.side.win { animation: winPop .34s ease-out forwards; }
+.side.win .frame { border-color: var(--win); animation: winGlow .5s ease-out forwards; }
+.side.lose { animation: loseSink .32s ease-in forwards; }
+#sideL.lose { --tilt: -1.5deg; }
+#sideR.lose { --tilt: 1.5deg; }
+.side.tie { animation: tieWobble .34s ease-in-out forwards; }
+.side.tie .frame { border-color: var(--tie); box-shadow: 0 0 0 4px rgba(240,180,41,.2), 0 0 30px rgba(240,180,41,.2); }
+.side.skip { animation: skipDrop .22s ease-in forwards; }
+.side.removed { animation: dropOut .28s cubic-bezier(.5,0,.9,.4) forwards; }
+#sideR.removed { --tilt: 6deg; }
+.side.removed .frame { border-color: var(--lose); box-shadow: 0 0 40px rgba(239,91,91,.4); }
+#sideL.enter { animation: enterL .48s cubic-bezier(.22,1,.36,1); }
+#sideR.enter { animation: enterR .48s cubic-bezier(.22,1,.36,1); }
+.side.enter-back { animation: enterBack .48s cubic-bezier(.22,1,.36,1); }
+.arena.shake { animation: shake .3s linear; }
+
+/* the old pair finishes fading out before the new one glides in */
+@keyframes winPop {
+  0% { transform: scale(1); opacity: 1; }
+  30% { transform: scale(1.04); }
+  55% { transform: scale(1.025); opacity: 1; }
+  100% { transform: scale(1.01); opacity: 0; }
+}
+@keyframes winGlow {
+  0% { box-shadow: 0 0 0 0 rgba(62,207,142,.7), 0 0 0 rgba(62,207,142,0); }
+  100% { box-shadow: 0 0 0 18px rgba(62,207,142,0), 0 0 50px rgba(62,207,142,.35); }
+}
+@keyframes loseSink {
+  55% { opacity: .25; transform: scale(.95) translateY(8px) rotate(var(--tilt, -1.5deg)); filter: grayscale(.8); }
+  100% { opacity: 0; transform: scale(.94) translateY(12px) rotate(var(--tilt, -1.5deg)); filter: grayscale(.8); }
+}
+@keyframes tieWobble {
+  0% { transform: rotate(0); } 20% { transform: rotate(-1.2deg); } 45% { transform: rotate(1.2deg); }
+  60% { transform: rotate(0); opacity: 1; } 100% { transform: rotate(0); opacity: 0; }
+}
+@keyframes skipDrop { to { opacity: 0; transform: translateY(20px) scale(.97); } }
+@keyframes dropOut {
+  0% { transform: none; opacity: 1; }
+  30% { transform: scale(1.03) rotate(calc(var(--tilt, -6deg) * -.3)); opacity: 1; }
+  100% { transform: translateY(90px) scale(.8) rotate(var(--tilt, -6deg)); opacity: 0; }
+}
+@keyframes enterL { from { opacity: 0; transform: translateX(-14px) scale(.985); } }
+@keyframes enterR { from { opacity: 0; transform: translateX(14px) scale(.985); } }
+@keyframes enterBack { from { opacity: 0; transform: scale(1.03); filter: blur(4px); } }
+@keyframes shake {
+  0%,100% { transform: none; } 20% { transform: translateX(-7px); } 40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); } 80% { transform: translateX(2px); }
+}
+
+/* floating score change (+14 / −14) */
+.delta {
+  position: absolute; left: 50%; top: 42%; z-index: 4;
+  font: 800 30px/1 system-ui, sans-serif; font-variant-numeric: tabular-nums;
+  pointer-events: none; text-shadow: 0 2px 12px rgba(0,0,0,.6);
+  animation: deltaUp .65s cubic-bezier(.2,.8,.3,1) forwards;
+}
+.delta.up { color: var(--win); }
+.delta.down { color: var(--lose); animation-name: deltaDown; font-size: 22px; }
+.delta.even { color: var(--tie); font-size: 22px; }
+@keyframes deltaUp {
+  0% { opacity: 0; transform: translate(-50%, 10px) scale(.6); }
+  20% { opacity: 1; transform: translate(-50%, -6px) scale(1.15); }
+  100% { opacity: 0; transform: translate(-50%, -70px) scale(1); }
+}
+@keyframes deltaDown {
+  0% { opacity: 0; transform: translate(-50%, -6px); }
+  20% { opacity: .9; }
+  100% { opacity: 0; transform: translate(-50%, 50px); }
+}
+
+/* combo counter (lives in the "vs" circle) */
+.vs { position: relative; z-index: 1; transition: transform .2s, background .2s, border-color .2s, color .2s, width .2s, height .2s, filter .3s; }
+.vs.combo {
+  width: 52px; height: 52px; font-size: 17px; font-weight: 800; text-transform: none;
+  color: #fff; border-color: transparent;
+  background: linear-gradient(135deg, #ff8a3d, #ff3d6e);
+  box-shadow: 0 0 24px rgba(255,90,80,.45);
+}
+.vs.combo.hot { background: linear-gradient(135deg, #ffd23d, #ff6a00 55%, #ff2d55); box-shadow: 0 0 34px rgba(255,140,40,.65); }
+.vs.combo.blaze { background: linear-gradient(135deg, #9fe3ff, #3d7bff 55%, #7a3dff); box-shadow: 0 0 40px rgba(80,150,255,.7); }
+.vs.bump { animation: bump .28s cubic-bezier(.2,1.8,.4,1); }
+.vs.break { animation: comboBreak .45s ease-out; }
+.vs-num { position: relative; text-shadow: 0 1px 4px rgba(0,0,0,.35); }
+.vs.combo.hot .vs-num { animation: jiggle .5s ease-in-out infinite; }
+.vs-lbl {
+  position: absolute; top: calc(100% + 12px); left: 50%; transform: translateX(-50%);
+  font-size: 10px; font-weight: 800; letter-spacing: .6px; color: #ff8a3d; white-space: nowrap;
+  text-shadow: 0 0 10px rgba(255,120,40,.6);
+}
+.vs.blaze .vs-lbl { color: #8fc8ff; text-shadow: 0 0 10px rgba(80,150,255,.7); }
+.vs:not(.combo) .vs-lbl { display: none; }
+
+/* countdown ring: drains while you decide, turns red and throbs near the end */
+.ring {
+  display: none; position: absolute; left: 50%; top: 50%;
+  width: 68px; height: 68px; overflow: visible; pointer-events: none;
+  transform: translate(-50%, -50%) rotate(-90deg);
+}
+.vs.combo .ring { display: block; }
+.ring circle { fill: none; stroke-width: 3.5; }
+.ring-track { stroke: rgba(255,255,255,.1); }
+.ring-fill { stroke: #ffd23d; stroke-linecap: round; stroke-dasharray: 188.5; stroke-dashoffset: 0; transition: stroke .25s; filter: drop-shadow(0 0 4px rgba(255,200,60,.7)); }
+.vs.ending .ring-fill { stroke: #ff3d3d; filter: drop-shadow(0 0 5px rgba(255,60,60,.9)); }
+.vs.ending .ring { animation: ringThrob .42s ease-in-out infinite; }
+.vs.ending { filter: saturate(.75) brightness(.92); }
+.vs.ending .vs-lbl { color: #ff5a5a; }
+
+/* Balatro-style fire rising behind the combo */
+.flame {
+  position: absolute; left: 50%; bottom: 50%; z-index: 0;
+  width: 150px; height: 200px; transform: translate(-50%, 18px);
+  pointer-events: none;
+}
+
+@keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+@keyframes comboBreak { 0% { transform: scale(1.2); filter: grayscale(1); } 60% { transform: scale(.9); } 100% { transform: scale(1); } }
+@keyframes jiggle { 0%, 100% { transform: rotate(-4deg) scale(1.02); } 50% { transform: rotate(4deg) scale(.98); } }
+@keyframes ringThrob {
+  0%, 100% { transform: translate(-50%, -50%) rotate(-90deg) scale(1); }
+  50% { transform: translate(-50%, -50%) rotate(-90deg) scale(1.12); }
+}
+
+/* particles + confetti canvas */
+#fx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 45; }
+
+/* footer key flash */
+.hint.pressed { background: var(--surface-3); border-color: var(--accent); color: var(--text); transform: scale(.95); }
+.hint.pressed kbd { background: var(--accent); color: #0e1014; border-color: var(--accent); }
+.hint { transition: background .12s, border-color .12s, color .12s, transform .12s; }
+
+/* header number bump + progress shimmer */
+.num-bump { display: inline-block; animation: bump .3s cubic-bezier(.2,1.8,.4,1); }
+.bar { position: relative; }
+.bar > i { position: relative; overflow: hidden; }
+#progress .bar > i::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent);
+  transform: translateX(-100%); animation: shimmer 2.6s ease-in-out infinite;
+}
+@keyframes shimmer { 60%, 100% { transform: translateX(100%); } }
+.bar.flash > i { animation: barFlash .6s ease-out; }
+@keyframes barFlash { 0% { filter: brightness(2.2); } 100% { filter: none; } }
+
+/* remove mode: ↑ then ← / → */
+#vote { position: relative; }
+.rm-banner {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5;
+  display: none; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
+  background: var(--surface-2); border: 1px solid var(--lose); border-radius: 10px;
+  padding: 7px 14px; font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.4);
+  max-width: calc(100% - 32px);
+}
+.rm-banner b { color: var(--lose); }
+.rm-banner span { color: var(--muted); }
+.rm-label {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  display: none; align-items: center; gap: 8px;
+  background: rgba(14,16,20,.88); border: 1px solid var(--lose); color: var(--lose);
+  border-radius: 10px; padding: 9px 16px; font-weight: 600; white-space: nowrap;
+}
+.frame::after { content: ''; position: absolute; inset: 0; background: rgba(239,91,91,0); transition: background .12s; pointer-events: none; }
+.remove-mode .rm-banner, .remove-mode .rm-label { display: flex; }
+.remove-mode .frame { border-color: rgba(239,91,91,.55); }
+.remove-mode .frame::after { background: rgba(239,91,91,.08); }
+.remove-mode .side:hover .frame { border-color: var(--lose); }
+.remove-mode .side:hover .frame::after { background: rgba(239,91,91,.2); }
+.remove-mode .side-key { display: none; }
+#footer.dim .hint:not([data-act="remove"]) { opacity: .35; }
+
+footer {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px 12px;
+  flex-wrap: wrap;
+}
+.hint {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: none; border: 1px solid transparent; border-radius: 8px;
+  padding: 5px 9px; color: var(--muted); font-size: 12px; cursor: pointer;
+}
+.hint:hover { background: var(--surface); border-color: var(--border); color: var(--text); }
+.hint:disabled { opacity: .35; cursor: default; background: none; border-color: transparent; }
+
+/* ---------- ranking ---------- */
+#ranking { overflow: auto; }
+.wrap { max-width: 1060px; margin: 0 auto; padding: 20px 16px 48px; }
+.toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+.toolbar h1 { margin: 0 auto 0 0; font-size: 20px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 22px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.card .label { color: var(--muted); font-size: 12px; }
+.card .value { font-size: 22px; font-weight: 650; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.card .sub { color: var(--faint); font-size: 12px; }
+
+h3.section { font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 26px 0 10px; font-weight: 600; }
+h3.section span { text-transform: none; letter-spacing: 0; color: var(--faint); font-weight: 400; margin-left: 6px; }
+
+.muted-note { color: var(--faint); font-size: 13px; }
+
+.rank-head, .row {
+  display: grid;
+  grid-template-columns: 40px 60px minmax(0, 1fr) 70px 96px 130px 34px;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+}
+.rank-head { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; padding-bottom: 6px; }
+.rank-list { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.row { border-top: 1px solid var(--border); cursor: pointer; transition: background .1s; }
+.row:first-child { border-top: 0; }
+.row:hover { background: var(--surface-2); }
+.rank { font-weight: 700; font-size: 16px; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+.row { animation: rowIn .35s cubic-bezier(.16,1,.3,1) both; animation-delay: calc(min(var(--i, 0), 30) * 22ms); }
+@keyframes rowIn { from { opacity: 0; transform: translateY(10px); } }
+.rank { position: relative; display: grid; place-items: center; }
+.row:nth-child(-n+3) .rank {
+  width: 34px; height: 34px; border-radius: 50%; justify-self: center;
+  color: #1a1305; font-size: 15px; overflow: hidden;
+}
+.row:nth-child(1) .rank { background: linear-gradient(135deg, #fff0a8, #f5c542 45%, #c8911a); box-shadow: 0 0 18px rgba(245,197,66,.35); }
+.row:nth-child(2) .rank { background: linear-gradient(135deg, #ffffff, #c9d1dc 50%, #8d97a5); }
+.row:nth-child(3) .rank { background: linear-gradient(135deg, #ffd2a8, #d99a62 50%, #9c5f2c); }
+.row:nth-child(1) .rank::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,.75) 50%, transparent 70%);
+  transform: translateX(-120%); animation: medalShine 3.2s ease-in-out infinite 1s;
+}
+@keyframes medalShine { 35%, 100% { transform: translateX(120%); } }
+.row:nth-child(1) .thumb { box-shadow: 0 0 0 2px #f5c542, 0 0 16px rgba(245,197,66,.35); }
+.move { display: block; font-size: 10px; font-weight: 700; line-height: 1; margin-top: 3px; text-align: center; font-variant-numeric: tabular-nums; }
+.move.up { color: var(--win); }
+.move.down { color: var(--lose); }
+.move.new { color: var(--accent); }
+.rank-cell { display: flex; flex-direction: column; align-items: center; }
+.btn:active, .tab:active, .icon-btn:active, .v-nav:active { transform: scale(.95); }
+.btn, .tab { transition: background .12s, border-color .12s, transform .1s; }
+.v-stage img.slide-next { animation: vSlideNext .28s cubic-bezier(.16,1,.3,1); }
+.v-stage img.slide-prev { animation: vSlidePrev .28s cubic-bezier(.16,1,.3,1); }
+@keyframes vSlideNext { from { opacity: 0; transform: translateX(60px) scale(.97); } }
+@keyframes vSlidePrev { from { opacity: 0; transform: translateX(-60px) scale(.97); } }
+.v-rank.gold { color: #f5c542; text-shadow: 0 0 16px rgba(245,197,66,.5); }
+.sound-btn { width: 36px; padding: 7px 0; justify-content: center; }
+.sound-btn .off { display: none; }
+.sound-btn.muted .on { display: none; }
+.sound-btn.muted .off { display: block; }
+.sound-btn.muted { color: var(--faint); }
+.thumb { width: 60px; height: 60px; object-fit: cover; border-radius: 8px; background: var(--surface-3); display: block; }
+.name { min-width: 0; }
+.name span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.name small { color: var(--faint); font-size: 12px; }
+.rating { font-weight: 650; font-variant-numeric: tabular-nums; font-size: 15px; }
+.record { font-variant-numeric: tabular-nums; color: var(--faint); }
+.record .w { color: var(--win); } .record .l { color: var(--lose); } .record .t { color: var(--tie); }
+.record b { font-weight: 600; }
+.pct { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--muted); }
+.pct .bar { flex: 1; height: 5px; }
+.pct .bar > i { background: var(--win); }
+.icon-btn {
+  width: 30px; height: 30px; border-radius: 7px;
+  display: grid; place-items: center;
+  background: none; border: 1px solid transparent; color: var(--faint); cursor: pointer;
+}
+.icon-btn:hover { color: var(--lose); border-color: var(--border); background: var(--surface-3); }
+
+/* ---------- detail dialog ---------- */
+dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text);
+  overflow: auto;
+}
+dialog::backdrop { background: rgba(5,6,9,.75); }
+.d-hero { position: relative; background: #08090c; height: min(46vh, 420px); }
+.d-hero img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.d-close { position: absolute; top: 10px; right: 10px; background: rgba(14,16,20,.8); }
+.d-view { position: absolute; top: 10px; left: 10px; background: rgba(14,16,20,.8); }
+.d-body { padding: 16px 20px 22px; }
+.d-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.d-title h2 { margin: 0; font-size: 18px; word-break: break-all; }
+.d-title .rk { color: var(--accent); font-weight: 700; }
+.d-stats { display: flex; gap: 18px; flex-wrap: wrap; margin: 10px 0 4px; color: var(--muted); font-size: 13px; }
+.d-stats b { color: var(--text); font-variant-numeric: tabular-nums; }
+.h2h { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.h2h h4 { margin: 18px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+.h2h .beat h4 { color: var(--win); } .h2h .lost h4 { color: var(--lose); } .h2h .tied h4 { color: var(--tie); }
+.opp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.opp-list li { display: flex; align-items: center; gap: 10px; background: var(--surface-2); border-radius: 8px; padding: 5px 10px 5px 5px; cursor: pointer; }
+.opp-list li:hover { background: var(--surface-3); }
+.opp-list img { width: 38px; height: 38px; object-fit: cover; border-radius: 6px; flex: none; }
+.opp-list .n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.opp-list .n small { display: block; color: var(--faint); font-size: 11px; }
+.opp-list .rec { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--muted); }
+.d-foot { display: flex; justify-content: flex-end; margin-top: 20px; }
+
+/* ---------- lists ---------- */
+.list-picker { display: flex; align-items: center; gap: 8px; }
+.list-picker select {
+  appearance: none; -webkit-appearance: none;
+  font: inherit; color: var(--text);
+  background: var(--surface-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2398a1b3' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center;
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 7px 30px 7px 12px; max-width: 220px; cursor: pointer;
+}
+.list-picker select:hover { border-color: #3a4152; }
+.list-picker select option { background: var(--surface-2); color: var(--text); }
+.list-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.list-tabs:empty { display: none; }
+.tab {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: none; border: 1px solid var(--border); border-radius: 99px;
+  padding: 6px 14px; color: var(--muted); cursor: pointer;
+}
+.tab small { color: var(--faint); font-variant-numeric: tabular-nums; }
+.tab:hover { color: var(--text); background: var(--surface); }
+.tab.on { background: var(--accent); border-color: var(--accent); color: #0e1014; font-weight: 600; }
+.tab.on small { color: rgba(14,16,20,.65); }
+.title-block { margin-right: auto; min-width: 0; }
+.list-sub { color: var(--faint); font-size: 12px; margin-top: 2px; }
+
+.nl-dlg { width: min(480px, calc(100vw - 32px)); }
+.nl-dlg form { padding: 20px 22px; }
+.nl-dlg h2 { margin: 0 0 6px; font-size: 18px; }
+.nl-intro { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+.nl-intro b { color: var(--text); font-weight: 600; }
+.nl-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; font-size: 13px; color: var(--muted); }
+.nl-field input {
+  font: inherit; color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+}
+.nl-field input:focus { outline: none; border-color: var(--accent); }
+.nl-count { display: flex; align-items: center; gap: 10px; }
+.nl-count input { width: 110px; font-size: 16px; font-weight: 600; }
+.nl-count small { color: var(--faint); }
+.nl-quick { display: flex; gap: 6px; flex-wrap: wrap; margin: -4px 0 14px; }
+.nl-quick button { background: var(--surface-2); border: 1px solid var(--border); border-radius: 99px; padding: 3px 11px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.nl-quick button:hover { color: var(--text); border-color: #3a4152; }
+.nl-preview { display: flex; gap: 4px; flex-wrap: wrap; margin: 4px 0 18px; min-height: 36px; align-items: center; }
+.nl-preview img { width: 36px; height: 36px; object-fit: cover; border-radius: 5px; }
+.nl-preview span { color: var(--faint); font-size: 12px; margin-left: 4px; }
+.nl-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ---------- in-order viewer ---------- */
+#viewer {
+  position: fixed; inset: 0; z-index: 40;
+  background: #050608;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+.v-top {
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.v-rank { font-weight: 700; font-size: 20px; color: var(--accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.v-rank small { color: var(--faint); font-weight: 400; font-size: 13px; margin-left: 4px; }
+.v-name { flex: 1; min-width: 0; }
+.v-name span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v-name small { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.v-stage { position: relative; min-height: 0; touch-action: pan-y; }
+.v-stage img { position: absolute; inset: 12px; width: calc(100% - 24px); height: calc(100% - 24px); object-fit: contain; }
+.v-nav {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 52px; height: 52px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: rgba(22,25,32,.8); border: 1px solid var(--border);
+  cursor: pointer; transition: background .12s, opacity .12s;
+}
+.v-nav:hover { background: var(--surface-3); }
+.v-nav:disabled { opacity: 0; pointer-events: none; }
+.v-prev { left: 16px; }
+.v-next { right: 16px; }
+.v-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.06); }
+.v-bar > i { display: block; height: 100%; background: var(--accent); transition: width .15s; }
+
+/* ---------- overlays ---------- */
+#dragOverlay {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(14,16,20,.85);
+  display: grid; place-items: center;
+  border: 3px dashed var(--accent);
+  font-size: 22px; font-weight: 600; color: var(--accent);
+  pointer-events: none;
+}
+#toast {
+  position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%) translateY(10px);
+  background: var(--surface-3); border: 1px solid var(--border); border-radius: 10px;
+  padding: 9px 14px; font-size: 13px; opacity: 0; pointer-events: none;
+  transition: opacity .2s, transform .2s; z-index: 60; max-width: calc(100vw - 32px);
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+@media (max-width: 760px) {
+  .rank-head, .row { grid-template-columns: 30px 48px minmax(0, 1fr) 56px 30px; gap: 10px; }
+  .rank-head .c-rec, .rank-head .c-pct, .row .record, .row .pct { display: none; }
+  .thumb { width: 48px; height: 48px; }
+  .h2h { grid-template-columns: 1fr; gap: 0; }
+  .brand span { display: none; }
+  .list-picker select { max-width: 150px; }
+  .row:nth-child(-n+3) .rank { width: 28px; height: 28px; font-size: 13px; }
+  .list-picker .btn kbd { display: none; }
+}
+@media (max-width: 700px) and (orientation: portrait) {
+  .arena { grid-template-columns: 1fr; grid-template-rows: 1fr auto 1fr; gap: 8px; padding: 10px 16px; }
+  .vs { width: 30px; height: 30px; font-size: 11px; }
+  .vs-lbl { top: 50%; left: calc(100% + 16px); transform: translateY(-50%); }
+  .side-key { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .side, .frame, .bar > i { transition: none; }
+  .side.win, .side.lose, .side.tie, .side.skip, .side.removed, .side.enter, .side.enter-back, .row,
+  .arena.shake, .vs.bump, .vs.break, .vs-num, .ring, .num-bump, .v-stage img, #progress .bar > i::after, .row .rank::after { animation: none !important; }
+  .side.lose, .side.skip, .side.removed { opacity: .3; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="8" height="14" rx="2"/><rect x="14" y="5" width="8" height="14" rx="2"/></svg>
+    <span>Image Ranker</span>
+  </div>
+  <div class="list-picker" id="listPicker" hidden>
+    <select id="listSelect" aria-label="Which list to rank"></select>
+    <button class="btn" id="newListBtn" type="button" title="Make a new list from the top images of this one">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h10M4 12h10M4 18h6M18 14v8M14 18h8"/></svg>
+      New list <kbd>N</kbd>
+    </button>
+  </div>
+  <div class="progress" id="progress" hidden title="Confidence combines how many votes you've cast vs. the recommended amount, and how evenly every image has been compared.">
+    <div class="progress-top">
+      <span><b id="pVotes">0</b> / ~<span id="pRec">0</span> <span id="pLabel">recommended votes</span></span>
+      <span><b id="pConf">0%</b> <span id="pConfLabel">confident</span><button class="p-stop" id="pStop" type="button" hidden title="Stop placing and mix the new images in normally">Stop</button></span>
+    </div>
+    <div class="bar"><i id="pBar"></i></div>
+  </div>
+  <div class="actions">
+    <button class="btn sound-btn" id="soundBtn" type="button" title="Sound on/off (M)" aria-label="Sound on/off">
+      <svg class="on" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
+      <svg class="off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6M16 9l6 6"/></svg>
+    </button>
+    <button class="btn" id="addBtn" type="button">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      Add images
+    </button>
+    <button class="btn primary" id="viewBtn" type="button" hidden><span id="viewBtnLabel">Ranking</span> <kbd>R</kbd></button>
+  </div>
+</header>
+
+<main>
+  <section id="empty" class="view">
+    <div class="dropzone" id="dropzone" role="button" tabindex="0">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>
+      <h2 id="emptyTitle">Drop your images here</h2>
+      <p id="emptyText">or click to choose files. Add as many as you like.</p>
+      <p class="small">Your images never leave this computer. Progress is saved automatically in this browser.</p>
+    </div>
+  </section>
+
+  <section id="vote" class="view" hidden>
+    <div class="rm-banner"><b>Remove which image?</b> <span><kbd>←</kbd> left · <kbd>→</kbd> right · <kbd>↑</kbd> or <kbd>Esc</kbd> cancel</span></div>
+    <div class="arena">
+      <figure class="side" id="sideL">
+        <div class="frame"><img id="imgL" alt=""><kbd class="side-key">←</kbd><div class="rm-label"><kbd>←</kbd> Remove this one</div></div>
+        <figcaption id="capL"></figcaption>
+      </figure>
+      <div class="vs-wrap">
+        <canvas class="flame" id="flame" aria-hidden="true"></canvas>
+        <div class="vs" id="vs">
+          <svg class="ring" viewBox="0 0 68 68" aria-hidden="true"><circle class="ring-track" cx="34" cy="34" r="30"/><circle class="ring-fill" id="ringFill" cx="34" cy="34" r="30"/></svg>
+          <span class="vs-num" id="vsNum">vs</span>
+          <small class="vs-lbl" id="vsLbl"></small>
+        </div>
+      </div>
+      <figure class="side" id="sideR">
+        <div class="frame"><img id="imgR" alt=""><kbd class="side-key">→</kbd><div class="rm-label">Remove this one <kbd>→</kbd></div></div>
+        <figcaption id="capR"></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="ranking" class="view" hidden>
+    <div class="wrap">
+      <div class="list-tabs" id="listTabs" role="tablist" aria-label="Lists"></div>
+      <div class="toolbar">
+        <div class="title-block"><h1 id="rankTitle">Ranking</h1><div class="list-sub" id="rankSub"></div></div>
+        <button class="btn" id="viewerBtn" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg>
+          View in order <kbd>V</kbd>
+        </button>
+        <button class="btn" id="exportBtn" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+          Export CSV
+        </button>
+        <button class="btn danger" id="deleteListBtn" type="button" hidden>Delete list</button>
+        <button class="btn danger" id="clearBtn" type="button">Clear all</button>
+      </div>
+      <div class="cards" id="cards"></div>
+      <h3 class="section">Leaderboard <span>click an image for its head-to-head record</span></h3>
+      <div class="rank-head">
+        <span>#</span><span></span><span>Image</span><span>Score</span><span class="c-rec">W–L–T</span><span class="c-pct">Win %</span><span></span>
+      </div>
+      <ol class="rank-list" id="rankList"></ol>
+    </div>
+  </section>
+</main>
+
+<footer id="footer" hidden>
+  <button class="hint" type="button" data-act="a"><kbd>←</kbd> Left wins</button>
+  <button class="hint" type="button" data-act="b"><kbd>→</kbd> Right wins</button>
+  <button class="hint" type="button" data-act="t"><kbd>Space</kbd> Tie</button>
+  <button class="hint" type="button" data-act="s"><kbd>↓</kbd> Skip</button>
+  <button class="hint" type="button" data-act="remove"><kbd>↑</kbd> Remove image</button>
+  <button class="hint" type="button" data-act="undo" id="undoHint"><kbd>⌫</kbd> Undo</button>
+  <button class="hint" type="button" data-act="rank"><kbd>R</kbd> Ranking</button>
+  <button class="hint" type="button" data-act="viewer"><kbd>V</kbd> View in order</button>
+</footer>
+
+<dialog id="detail"></dialog>
+<dialog id="placeDlg" class="nl-dlg">
+  <form method="dialog">
+    <h2 id="plTitle">Place the new images first?</h2>
+    <p class="nl-intro">Every pair will include at least one of the new images, matched against images with similar scores so each one finds its spot quickly. The progress bar tracks only the new images until they’re sorted in.</p>
+    <div class="nl-preview" id="plPreview"></div>
+    <div class="nl-actions">
+      <button class="btn" value="mix">Just mix them in</button>
+      <button class="btn primary" value="place" autofocus>Place them first</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="newListDlg" class="nl-dlg">
+  <form method="dialog" id="newListForm">
+    <h2>New list</h2>
+    <p class="nl-intro">Take the top images from <b id="nlFrom"></b> and rank them again in a list of their own. The new list starts with fresh scores, and <b id="nlFrom2"></b> isn’t changed.</p>
+    <label class="nl-field">
+      <span>How many of the top images?</span>
+      <span class="nl-count"><input type="number" id="nlCount" min="2" step="1" required> <small id="nlOf"></small></span>
+    </label>
+    <div class="nl-quick" id="nlQuick"></div>
+    <label class="nl-field">
+      <span>Name</span>
+      <input type="text" id="nlName" maxlength="40" required>
+    </label>
+    <div class="nl-preview" id="nlPreview"></div>
+    <div class="nl-actions">
+      <button class="btn" type="button" id="nlCancel">Cancel</button>
+      <button class="btn primary" type="submit">Create list</button>
+    </div>
+  </form>
+</dialog>
+<div id="viewer" hidden role="dialog" aria-label="Ranked images">
+  <div class="v-top">
+    <div class="v-rank" id="vRank"></div>
+    <div class="v-name"><span id="vName"></span><small id="vMeta"></small></div>
+    <button class="btn" type="button" id="vDetail">Head-to-head</button>
+    <button class="btn" type="button" id="vClose">Close <kbd>Esc</kbd></button>
+  </div>
+  <div class="v-stage" id="vStage">
+    <img id="vImg" alt="">
+    <button class="v-nav v-prev" type="button" id="vPrev" aria-label="Previous (higher ranked)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+    </button>
+    <button class="v-nav v-next" type="button" id="vNext" aria-label="Next (lower ranked)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+    </button>
+    <div class="v-bar"><i id="vBar"></i></div>
+  </div>
+</div>
+<input type="file" id="fileInput" accept="image/*" multiple hidden>
+<div id="dragOverlay" hidden>Drop to add images</div>
+<div id="toast" role="status"></div>
+<canvas id="fx" aria-hidden="true"></canvas>
+
+<script>
+(() => {
+'use strict';
+
+const $ = s => document.querySelector(s);
+const el = {
+  empty: $('#empty'), vote: $('#vote'), ranking: $('#ranking'), footer: $('#footer'),
+  sideL: $('#sideL'), sideR: $('#sideR'), imgL: $('#imgL'), imgR: $('#imgR'), capL: $('#capL'), capR: $('#capR'),
+  progress: $('#progress'), pVotes: $('#pVotes'), pRec: $('#pRec'), pConf: $('#pConf'), pBar: $('#pBar'),
+  viewBtn: $('#viewBtn'), viewBtnLabel: $('#viewBtnLabel'), addBtn: $('#addBtn'), fileInput: $('#fileInput'),
+  dropzone: $('#dropzone'), emptyTitle: $('#emptyTitle'), emptyText: $('#emptyText'),
+  cards: $('#cards'), rankList: $('#rankList'),
+  detail: $('#detail'), dragOverlay: $('#dragOverlay'), toast: $('#toast'), undoHint: $('#undoHint'),
+  viewer: $('#viewer'), vImg: $('#vImg'), vRank: $('#vRank'), vName: $('#vName'), vMeta: $('#vMeta'),
+  vPrev: $('#vPrev'), vNext: $('#vNext'), vBar: $('#vBar'), vStage: $('#vStage'),
+  listPicker: $('#listPicker'), listSelect: $('#listSelect'), listTabs: $('#listTabs'),
+  rankTitle: $('#rankTitle'), rankSub: $('#rankSub'), deleteListBtn: $('#deleteListBtn'),
+  newListDlg: $('#newListDlg'), nlCount: $('#nlCount'), nlName: $('#nlName'), nlOf: $('#nlOf'),
+  nlQuick: $('#nlQuick'), nlPreview: $('#nlPreview'),
+  placeDlg: $('#placeDlg'), plTitle: $('#plTitle'), plPreview: $('#plPreview'),
+  pLabel: $('#pLabel'), pConfLabel: $('#pConfLabel'), pStop: $('#pStop'),
+  soundBtn: $('#soundBtn'), vs: $('#vs'), arena: $('.arena'), fx: $('#fx'),
+  flame: $('#flame'), ringFill: $('#ringFill'), vsNum: $('#vsNum'), vsLbl: $('#vsLbl'),
+};
+
+// ---------- state ----------
+const START = 1500;
+const images = new Map();   // id -> {id, name, size, type, added, blob, thumb, url, thumbUrl}
+// Every list has its own votes and scores. "All images" (ids: null) holds every image;
+// other lists hold a fixed subset, e.g. the top 20 of another list.
+let lists = [newAllList()]; // [{id, name, ids: null|string[], history, current, from, created}]
+let activeId = 'all';
+let history = [];           // active list's votes: [{a, b, r: 'a'|'b'|'t'|'s', t: ms, at: epoch}]
+let current = null;         // active list's pair on screen: {a, b} — a is shown left
+let S = null;               // derived stats for the active list, rebuilt by replay()
+let view = 'empty';
+let busy = false;
+let showToken = 0;
+let db = null;
+
+// ---------- storage (IndexedDB) ----------
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('image-ranker', 1);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      d.createObjectStore('images', { keyPath: 'id' });
+      d.createObjectStore('meta');
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function tx(store, mode, fn) {
+  return new Promise((resolve, reject) => {
+    if (!db) return resolve();
+    const t = db.transaction(store, mode);
+    const req = fn(t.objectStore(store));
+    t.oncomplete = () => resolve(req && req.result);
+    t.onerror = () => reject(t.error);
+    t.onabort = () => reject(t.error);
+  });
+}
+let saveWarned = false;
+function saveFail(err) {
+  console.error(err);
+  if (!saveWarned) { saveWarned = true; toast('Could not save progress — browser storage may be full or blocked.'); }
+}
+function saveMeta() {
+  syncActive();
+  tx('meta', 'readwrite', s => s.put({ lists, active: activeId }, 'state')).catch(saveFail);
+}
+
+// ---------- lists ----------
+function newAllList() { return { id: 'all', name: 'All images', ids: null, history: [], current: null }; }
+function activeList() { return lists.find(l => l.id === activeId) || lists[0]; }
+function listIds(l = activeList()) { return l.ids ? l.ids.filter(id => images.has(id)) : [...images.keys()]; }
+function inList(id) { const l = activeList(); return images.has(id) && (!l.ids || l.ids.includes(id)); }
+function pairValid(c) { return !!c && inList(c.a) && inList(c.b); }
+function syncActive() { const l = activeList(); l.history = history; l.current = current; }
+function cloneLists() { return lists.map(l => ({ ...l, ids: l.ids && l.ids.slice(), history: l.history.slice() })); }
+
+function switchList(id, toView) {
+  if (!lists.some(l => l.id === id)) return;
+  if (view === 'ranking') recordSeen();
+  syncActive();
+  activeId = id;
+  lastMilestone = null;
+  combo = 0;
+  renderCombo(false);
+  const l = activeList();
+  history = l.history;
+  current = l.current;
+  removedStack.length = 0;  // undo doesn't cross between lists
+  replay();
+  if (!pairValid(current)) current = pickPair();
+  el.imgL.dataset.id = el.imgR.dataset.id = '';
+  saveMeta();
+  setView(toView || view);
+}
+
+function createList(count, name) {
+  syncActive();
+  const from = activeList();
+  const ids = ranked().slice(0, count).map(x => x.im.id);
+  const l = { id: 'l' + newId(), name, ids, history: [], current: null, from: from.name, created: Date.now() };
+  lists.push(l);
+  switchList(l.id, 'vote');
+  toast(`Created "${name}" with ${ids.length} images`);
+  fx.confetti(false);
+  sfx.milestone(false);
+}
+
+// Remember each image's rank when you leave the ranking page, to show ▲/▼ next time.
+function recordSeen() {
+  const l = activeList();
+  l.seen = Object.fromEntries(ranked().map((x, i) => [x.im.id, i + 1]));
+  saveMeta();
+}
+
+function deleteList() {
+  const l = activeList();
+  if (!l.ids) return;
+  if (!confirm(`Delete the list "${l.name}" and its votes?\nThe images stay in All images.`)) return;
+  lists = lists.filter(x => x !== l);
+  activeId = 'all';
+  lastMilestone = null;
+  const a = activeList();
+  history = a.history;
+  current = a.current;
+  removedStack.length = 0;
+  replay();
+  if (!pairValid(current)) current = pickPair();
+  el.imgL.dataset.id = el.imgR.dataset.id = '';
+  saveMeta();
+  setView(view);
+  toast(`Deleted "${l.name}"`);
+}
+
+function renderListUI() {
+  el.listSelect.innerHTML = lists.map(l =>
+    `<option value="${l.id}">${esc(l.name)} (${listIds(l).length})</option>`).join('');
+  el.listSelect.value = activeId;
+  el.listPicker.hidden = images.size === 0;
+}
+
+// ---------- rating model ----------
+function pk(a, b) { return a < b ? a + '|' + b : b + '|' + a; }
+function ensure(id) {
+  let p = S.per.get(id);
+  if (!p) {
+    p = { rating: START, w: 0, l: 0, t: 0, shown: 0 };
+    S.per.set(id, p);
+    S.h2h.set(id, new Map());
+  }
+  return p;
+}
+function resetStats() {
+  S = { per: new Map(), pairs: new Map(), h2h: new Map(), votes: 0, ties: 0, skips: 0 };
+  for (const id of listIds()) ensure(id);
+}
+// Higher K while an image has few games, so new images find their level quickly.
+function kFactor(p) { return (p.w + p.l + p.t) < 6 ? 40 : 24; }
+function recordH2H(x, y, score) {
+  const m = S.h2h.get(x);
+  let o = m.get(y);
+  if (!o) { o = { w: 0, l: 0, t: 0 }; m.set(y, o); }
+  if (score === 1) o.w++; else if (score === 0) o.l++; else o.t++;
+}
+function apply(e) {
+  const A = ensure(e.a), B = ensure(e.b);
+  A.shown++; B.shown++;
+  const key = pk(e.a, e.b);
+  S.pairs.set(key, (S.pairs.get(key) || 0) + 1);
+  if (e.r === 's') { S.skips++; return; }
+  const sa = e.r === 'a' ? 1 : e.r === 'b' ? 0 : 0.5;
+  const ea = 1 / (1 + Math.pow(10, (B.rating - A.rating) / 400));
+  const ka = kFactor(A), kb = kFactor(B);
+  A.rating += ka * (sa - ea);
+  B.rating += kb * (ea - sa);
+  if (sa === 1) { A.w++; B.l++; }
+  else if (sa === 0) { A.l++; B.w++; }
+  else { A.t++; B.t++; S.ties++; }
+  S.votes++;
+  recordH2H(e.a, e.b, sa);
+  recordH2H(e.b, e.a, 1 - sa);
+}
+function replay() {
+  resetStats();
+  for (const e of history) apply(e);
+}
+
+// Smart pairing: never repeat a pair until every pair has been seen equally often;
+// favour images that have been shown the least, and opponents with a similar score.
+// Pass fixedA to keep that image and only pick a fresh opponent for it.
+function pickPair(avoidKey, fixedA) {
+  const ids = listIds();
+  const n = ids.length;
+  if (n < 2) return null;
+  const placing = placingIds();
+  if (fixedA) {
+    // while placing, a kept old image must face one of the new ones
+    const pool = placing.length && !placing.includes(fixedA) ? placing : ids;
+    return { a: fixedA, b: pickOpponent(pool, fixedA, avoidKey) };
+  }
+  if (placing.length) {
+    // Placement mode: one side is always the new image with the fewest games so far
+    let a = null, best = Infinity;
+    for (const id of placing) {
+      const p = S.per.get(id);
+      const s = (p.w + p.l + p.t) + Math.random() * 1.5;
+      if (s < best) { best = s; a = id; }
+    }
+    const b = pickOpponent(ids, a, avoidKey);
+    return Math.random() < 0.5 ? { a, b } : { a: b, b: a };
+  }
+  const total = n * (n - 1) / 2;
+  let gmin = 0;
+  if (S.pairs.size >= total) {
+    gmin = Infinity;
+    for (const c of S.pairs.values()) if (c < gmin) gmin = c;
+  }
+  const over = new Map();
+  for (const [k, c] of S.pairs) {
+    if (c > gmin) {
+      const [x, y] = k.split('|');
+      over.set(x, (over.get(x) || 0) + 1);
+      over.set(y, (over.get(y) || 0) + 1);
+    }
+  }
+  const eligible = ids.filter(id => (over.get(id) || 0) < n - 1);
+
+  let a = null, best = Infinity;
+  for (const id of eligible) {
+    const s = S.per.get(id).shown + Math.random() * 1.5;
+    if (s < best) { best = s; a = id; }
+  }
+  const b = pickOpponent(ids, a, avoidKey);
+  return Math.random() < 0.5 ? { a, b } : { a: b, b: a };
+}
+
+// Among a's least-seen pairings, prefer opponents with a similar score.
+function pickOpponent(ids, a, avoidKey) {
+  const ra = S.per.get(a).rating;
+  let level = Infinity;
+  for (const id of ids) if (id !== a) level = Math.min(level, S.pairs.get(pk(a, id)) || 0);
+  let cands = ids.filter(id => id !== a && (S.pairs.get(pk(a, id)) || 0) <= level);
+  if (avoidKey && cands.length > 1) {
+    const f = cands.filter(id => pk(a, id) !== avoidKey);
+    if (f.length) cands = f;
+  }
+  let b;
+  if (Math.random() < 0.2) {
+    b = cands[Math.floor(Math.random() * cands.length)];
+  } else {
+    let bs = Infinity;
+    for (const id of cands) {
+      const p = S.per.get(id);
+      const s = Math.abs(p.rating - ra) + Math.random() * 120 + p.shown * 6;
+      if (s < bs) { bs = s; b = id; }
+    }
+  }
+  return b;
+}
+
+// ---------- placement mode: sort newly imported images into an existing ranking ----------
+function placingIds(l = activeList()) {
+  return (l.placing || []).filter(id => images.has(id) && (!l.ids || l.ids.includes(id)));
+}
+// Games each new image needs before it counts as placed (roughly a binary search through the list).
+function placeTarget(n) { return Math.max(3, Math.ceil(Math.log2(n)) + 1); }
+
+function progress() {
+  const ids = listIds();
+  const n = ids.length;
+  const target = placeTarget(n);
+  const placing = placingIds();
+  if (placing.length) {
+    const l = activeList();
+    let done = 0;
+    for (const id of placing) {
+      const p = S.per.get(id);
+      done += Math.min(1, (p.w + p.l + p.t) / target);
+    }
+    const votes = history.slice(l.placingStart || 0).filter(e => e.r !== 's').length;
+    return { placing: placing.length, rec: placing.length * target, votes, conf: done / placing.length };
+  }
+  const rec = Math.max(n, Math.round(n * Math.log2(n) * 0.7));
+  let cov = 0;
+  for (const id of ids) {
+    const p = S.per.get(id);
+    cov += Math.min(1, (p.w + p.l + p.t) / target);
+  }
+  cov /= n;
+  const conf = 0.6 * Math.min(1, S.votes / rec) + 0.4 * cov;
+  return { placing: 0, rec, votes: S.votes, conf };
+}
+
+function startPlacing(ids) {
+  const l = activeList();
+  const keep = placingIds(l);
+  l.placing = [...new Set([...keep, ...ids])];
+  if (!keep.length) l.placingStart = history.length;
+  lastMilestone = null;
+  current = pickPair();
+  el.imgL.dataset.id = el.imgR.dataset.id = '';  // show a pair with a new image right away
+  saveMeta();
+  setView('vote');
+  toast(`Placing ${l.placing.length} new image${l.placing.length === 1 ? '' : 's'} — each pair includes one of them`, 3000);
+}
+function finishPlacing(completed) {
+  const l = activeList();
+  const n = placingIds(l).length;
+  l.placing = [];
+  l.placingStart = 0;
+  lastMilestone = null;
+  saveMeta();
+  if (completed) {
+    fx.confetti(true);
+    sfx.milestone(true);
+    restartAnim(el.pBar.parentElement, 'flash');
+    toast(`All ${n} new image${n === 1 ? '' : 's'} placed! 🎉 Back to ranking everything.`, 3500);
+  } else {
+    toast('Stopped placing — new images are mixed in normally now');
+  }
+  updateHeader();
+}
+
+function openPlaceDialog(ids) {
+  const shown = ids.slice(0, 24);
+  el.plTitle.textContent = `Place the ${ids.length} new image${ids.length === 1 ? '' : 's'} first?`;
+  el.plPreview.innerHTML = shown.map(id => `<img src="${images.get(id).thumbUrl}" alt="" title="${esc(images.get(id).name)}">`).join('') +
+    (ids.length > shown.length ? `<span>+${ids.length - shown.length} more</span>` : '');
+  el.placeDlg.returnValue = '';
+  timer.pause();
+  el.placeDlg._ids = ids;
+  el.placeDlg._list = activeId;
+  el.placeDlg.showModal();
+}
+function placeChoice(choice) {
+  if (el.placeDlg.open) el.placeDlg.close();
+  const ids = el.placeDlg._ids || [];
+  el.placeDlg._ids = null;
+  if (choice === 'place' && el.placeDlg._list === activeId && ids.length) startPlacing(ids);
+  else if (view === 'vote' && el.viewer.hidden && !busy) timer.resume();
+}
+// Handle the buttons directly (the dialog's own close event can arrive late)
+el.placeDlg.querySelector('form').addEventListener('submit', e => {
+  e.preventDefault();
+  placeChoice(e.submitter ? e.submitter.value : 'place');
+});
+el.placeDlg.addEventListener('cancel', e => { e.preventDefault(); placeChoice('mix'); });
+el.pStop.addEventListener('click', () => finishPlacing(false));
+
+// ---------- decision timer (pauses while the tab is hidden or ranking is open) ----------
+const timer = {
+  start: 0, pausedAt: null,
+  begin() { this.start = performance.now(); this.pausedAt = document.hidden ? this.start : null; },
+  pause() { if (this.pausedAt == null) this.pausedAt = performance.now(); },
+  resume() { if (this.pausedAt != null) { this.start += performance.now() - this.pausedAt; this.pausedAt = null; } },
+  elapsed() { return (this.pausedAt ?? performance.now()) - this.start; },
+};
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) timer.pause();
+  else if (view === 'vote') timer.resume();
+});
+
+// ---------- juice: sound effects (synthesised, no files needed) ----------
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const sfx = {
+  ctx: null,
+  on: (() => { try { return localStorage.getItem('ranker-sound') !== 'off'; } catch (_) { return true; } })(),
+  audio() {
+    if (!this.on) return null;
+    try {
+      if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+      return this.ctx;
+    } catch (_) { return null; }
+  },
+  tone(freq, dur, { type = 'sine', vol = 0.12, slide = 0, delay = 0 } = {}) {
+    const ac = this.audio();
+    if (!ac) return;
+    const t = ac.currentTime + delay;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(ac.destination);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  },
+  noise(dur, { vol = 0.08, from = 2000, to = 400, delay = 0, q = 1 } = {}) {
+    const ac = this.audio();
+    if (!ac) return;
+    const t = ac.currentTime + delay;
+    const len = Math.ceil(ac.sampleRate * dur);
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    const f = ac.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = q;
+    f.frequency.setValueAtTime(from, t);
+    f.frequency.exponentialRampToValueAtTime(to, t + dur);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f).connect(g).connect(ac.destination);
+    src.start(t);
+    src.stop(t + dur);
+  },
+  // The pick sound climbs a major scale as your combo grows.
+  pick(level) {
+    const steps = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24];
+    const f = 440 * Math.pow(2, steps[Math.min(Math.max(level - 1, 0), steps.length - 1)] / 12);
+    this.tone(f, 0.12, { type: 'triangle', vol: 0.13 });
+    this.tone(f * 2, 0.08, { vol: 0.04, delay: 0.015 });
+    this.noise(0.05, { vol: 0.03, from: 5000, to: 2500 });
+  },
+  tie() {
+    this.tone(392, 0.1, { type: 'triangle', vol: 0.1 });
+    this.tone(392, 0.12, { type: 'triangle', vol: 0.1, delay: 0.09 });
+  },
+  skip() { this.noise(0.16, { vol: 0.07, from: 900, to: 3500, q: 2 }); },
+  undo() { this.tone(700, 0.14, { type: 'triangle', vol: 0.1, slide: -380 }); },
+  remove() {
+    this.tone(160, 0.25, { type: 'square', vol: 0.045, slide: -90 });
+    this.noise(0.22, { vol: 0.1, from: 1200, to: 150 });
+  },
+  armed() { this.tone(260, 0.08, { type: 'square', vol: 0.03 }); },
+  comboBreak() { this.tone(330, 0.18, { type: 'sawtooth', vol: 0.025, slide: -140 }); },
+  flip() { this.tone(880, 0.04, { vol: 0.035 }); },
+  milestone(big) {
+    const notes = big ? [523, 659, 784, 1047, 1319] : [523, 659, 784];
+    notes.forEach((f, i) => this.tone(f, big ? 0.35 : 0.22, { type: 'triangle', vol: 0.09, delay: i * 0.075 }));
+    if (big) notes.forEach((f, i) => this.tone(f * 2, 0.3, { vol: 0.03, delay: 0.4 + i * 0.05 }));
+  },
+};
+function setSound(on) {
+  sfx.on = on;
+  try { localStorage.setItem('ranker-sound', on ? 'on' : 'off'); } catch (_) { /* not saved */ }
+  el.soundBtn.classList.toggle('muted', !on);
+  if (on) sfx.tone(660, 0.08, { type: 'triangle', vol: 0.08 });
+  toast(on ? 'Sound on' : 'Sound off', 1200);
+}
+el.soundBtn.classList.toggle('muted', !sfx.on);
+el.soundBtn.addEventListener('click', () => setSound(!sfx.on));
+
+// ---------- juice: particles + confetti ----------
+const fx = {
+  ctx: null, parts: [], raf: 0, dpr: 1,
+  resize() {
+    this.dpr = Math.min(2, window.devicePixelRatio || 1);
+    el.fx.width = innerWidth * this.dpr;
+    el.fx.height = innerHeight * this.dpr;
+  },
+  burst(x, y, { count = 24, colors = ['#3ecf8e', '#a6f4c5', '#7c9cff', '#ffffff'], speed = 7, size = 4 } = {}) {
+    if (reducedMotion) return;
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2, v = speed * (0.35 + Math.random() * 0.8);
+      this.parts.push({
+        x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - speed * 0.3, g: 0.2,
+        life: 1, decay: 0.02 + Math.random() * 0.02, size: size * (0.5 + Math.random()),
+        color: colors[i % colors.length], rect: false, rot: 0, vr: 0,
+      });
+    }
+    this.start();
+  },
+  confetti(big) {
+    if (reducedMotion) return;
+    const colors = ['#7c9cff', '#3ecf8e', '#f0b429', '#ef5b5b', '#c792ff', '#ffffff'];
+    const n = big ? 170 : 60;
+    for (let i = 0; i < n; i++) {
+      this.parts.push({
+        x: Math.random() * innerWidth, y: -20 - Math.random() * (big ? 260 : 120),
+        vx: (Math.random() - 0.5) * 3, vy: 2 + Math.random() * 4, g: 0.06,
+        life: 1, decay: 0.004 + Math.random() * 0.004, size: 4 + Math.random() * 4,
+        color: colors[i % colors.length], rect: true, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.3,
+      });
+    }
+    this.start();
+  },
+  start() {
+    if (!this.ctx) {
+      this.ctx = el.fx.getContext('2d');
+      this.resize();
+      addEventListener('resize', () => this.resize());
+    }
+    if (!this.raf) this.raf = requestAnimationFrame(() => this.tick());
+  },
+  tick() {
+    const c = this.ctx, d = this.dpr;
+    c.clearRect(0, 0, el.fx.width, el.fx.height);
+    this.parts = this.parts.filter(p => p.life > 0 && p.y < innerHeight + 40);
+    for (const p of this.parts) {
+      p.vx *= 0.985;
+      p.vy = p.vy * 0.985 + p.g;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= p.decay;
+      p.rot += p.vr;
+      c.globalAlpha = Math.max(0, Math.min(1, p.life * 1.5));
+      c.fillStyle = p.color;
+      if (p.rect) {
+        c.save();
+        c.translate(p.x * d, p.y * d);
+        c.rotate(p.rot);
+        c.fillRect(-p.size * d, -p.size * d * 0.4, p.size * 2 * d, p.size * 0.8 * d);
+        c.restore();
+      } else {
+        c.beginPath();
+        c.arc(p.x * d, p.y * d, Math.max(0.5, p.size * d * p.life), 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+    c.globalAlpha = 1;
+    this.raf = this.parts.length ? requestAnimationFrame(() => this.tick()) : 0;
+  },
+};
+function centerOf(node) {
+  const r = node.getBoundingClientRect();
+  return [r.left + r.width / 2, r.top + r.height / 2];
+}
+function restartAnim(node, cls) {
+  node.classList.remove(cls);
+  void node.offsetWidth;  // reflow so the animation plays again
+  node.classList.add(cls);
+}
+function fmtDelta(v) {
+  const n = Math.round(v);
+  return n > 0 ? '+' + n : n < 0 ? '−' + Math.abs(n) : '±0';
+}
+function floatDelta(side, v, cls) {
+  const d = document.createElement('div');
+  d.className = 'delta ' + cls;
+  d.textContent = fmtDelta(v);
+  side.querySelector('.frame').appendChild(d);
+  setTimeout(() => d.remove(), 700);
+}
+function flashHint(act) {
+  const b = el.footer.querySelector(`[data-act="${act}"]`);
+  if (!b) return;
+  b.classList.add('pressed');
+  clearTimeout(b._flash);
+  b._flash = setTimeout(() => b.classList.remove('pressed'), 140);
+}
+
+// ---------- juice: combo for quick decisions ----------
+const COMBO_TIME = 3200;  // decide within 3.2s to keep the combo going
+const COMBO_BLAZE = 25;   // from here the fire burns blue
+let combo = 0;
+function bumpCombo(e) {
+  if (e.r === 's') return;
+  if (e.t <= COMBO_TIME) combo++;
+  else {
+    if (combo >= 3) breakCombo();
+    combo = 1;
+  }
+  renderCombo(true);
+  if (combo >= 3) flame.flare();
+  if (combo >= 10 && combo % 10 === 0) {
+    const [x, y] = centerOf(el.vs);
+    const colors = combo >= COMBO_BLAZE ? ['#9fe3ff', '#3d7bff', '#ffffff'] : ['#ffd23d', '#ff6a00', '#ff2d55', '#ffffff'];
+    fx.burst(x, y, { count: 40, speed: 9, colors });
+  }
+}
+function breakCombo() {
+  sfx.comboBreak();
+  restartAnim(el.vs, 'break');
+  flame.smoke();
+}
+// Called every frame by the fire loop while a combo is alive: time ran out before you voted.
+function expireCombo() {
+  breakCombo();
+  combo = 0;
+  renderCombo(false);
+}
+function renderCombo(bump) {
+  const v = el.vs;
+  if (combo >= 3) {
+    v.classList.add('combo');
+    v.classList.toggle('hot', combo >= 10);
+    v.classList.toggle('blaze', combo >= COMBO_BLAZE);
+    el.vsNum.textContent = '×' + combo;
+    el.vsLbl.textContent = combo >= COMBO_BLAZE ? 'UNSTOPPABLE' : combo >= 10 ? 'ON FIRE' : 'COMBO';
+    if (bump) restartAnim(v, 'bump');
+    flame.start();
+  } else {
+    v.classList.remove('combo', 'hot', 'blaze', 'ending');
+    el.vsNum.textContent = 'vs';
+    el.vsLbl.textContent = '';
+  }
+}
+
+// How much of the combo window is left for the pair on screen (1 = full, 0 = expired).
+function comboRemaining() {
+  if (busy) return 1;  // mid-transition: the clock starts when the next pair appears
+  return Math.max(0, 1 - timer.elapsed() / COMBO_TIME);
+}
+
+// ---------- juice: Balatro-style fire behind the combo ----------
+const flame = {
+  ctx: null, parts: [], raf: 0, t: 0, W: 150, H: 200,
+  init() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    el.flame.width = this.W * dpr;
+    el.flame.height = this.H * dpr;
+    this.ctx = el.flame.getContext('2d');
+    this.ctx.scale(dpr, dpr);
+  },
+  start() {
+    if (!this.ctx) this.init();
+    if (!this.raf) this.raf = requestAnimationFrame(() => this.tick());
+  },
+  spawn(n, power, boost = 1) {
+    if (reducedMotion) return;
+    const level = Math.min(1, (combo - 2) / 20);
+    const blue = combo >= COMBO_BLAZE;
+    for (let i = 0; i < n; i++) {
+      this.parts.push({
+        x: this.W / 2 + (Math.random() - 0.5) * (26 + 26 * level),
+        y: this.H - 22 + Math.random() * 6,
+        vx: (Math.random() - 0.5) * 0.7,
+        vy: -(1.3 + Math.random() * 1.7) * (0.6 + power * 1.0) * boost,
+        life: 1,
+        decay: 0.018 + Math.random() * 0.02,
+        size: (8 + Math.random() * 9) * (0.6 + power * 0.8),
+        seed: Math.random() * 6.28,
+        blue: blue && Math.random() < 0.6,
+        smoke: false,
+      });
+    }
+  },
+  // A big lick of flame each time the combo goes up
+  flare() {
+    this.start();
+    this.spawn(26, 1, 1.5);
+  },
+  // Fire goes out in a puff of smoke when the combo breaks
+  smoke() {
+    if (reducedMotion) return;
+    this.start();
+    for (const p of this.parts) p.decay *= 2.5;
+    for (let i = 0; i < 18; i++) {
+      this.parts.push({
+        x: this.W / 2 + (Math.random() - 0.5) * 30, y: this.H - 26,
+        vx: (Math.random() - 0.5) * 0.8, vy: -(0.6 + Math.random() * 0.9),
+        life: 1, decay: 0.012 + Math.random() * 0.01, size: 8 + Math.random() * 8,
+        seed: Math.random() * 6.28, blue: false, smoke: true,
+      });
+    }
+  },
+  tick() {
+    const c = this.ctx;
+    this.t++;
+    let alive = false;
+    if (combo >= 3) {
+      alive = true;
+      const remain = comboRemaining();
+      // countdown ring
+      el.ringFill.style.strokeDashoffset = (188.5 * (1 - remain)).toFixed(1);
+      el.vs.classList.toggle('ending', remain < 0.35);
+      if (!busy && view === 'vote' && remain <= 0) {
+        expireCombo();
+      } else {
+        // the fire burns higher with bigger combos and dies down as time runs out
+        const level = Math.min(1, (combo - 2) / 20);
+        const power = (0.35 + 0.65 * level) * (0.15 + 0.85 * Math.min(1, remain / 0.55));
+        const n = power * 6;
+        this.spawn(Math.floor(n) + (Math.random() < n % 1 ? 1 : 0), power);
+      }
+    }
+
+    c.clearRect(0, 0, this.W, this.H);
+    this.parts = this.parts.filter(p => p.life > 0);
+    for (const p of this.parts) {
+      p.x += p.vx + Math.sin(this.t * 0.09 + p.seed) * 0.45;
+      p.y += p.vy;
+      p.vy *= 0.992;
+      p.life -= p.decay;
+      if (p.life <= 0) continue;
+      const r = Math.max(0.5, p.size * (p.smoke ? 1.6 - p.life * 0.6 : 0.35 + 0.65 * p.life));
+      let col, a;
+      if (p.smoke) {
+        c.globalCompositeOperation = 'source-over';
+        col = '120,120,130'; a = p.life * 0.28;
+      } else {
+        c.globalCompositeOperation = 'lighter';
+        const L = p.life;
+        col = p.blue
+          ? (L > 0.72 ? '220,245,255' : L > 0.45 ? '90,170,255' : L > 0.2 ? '60,80,240' : '70,30,160')
+          : (L > 0.72 ? '255,244,190' : L > 0.45 ? '255,165,40' : L > 0.2 ? '255,70,30' : '150,25,20');
+        a = Math.min(1, L * 1.3) * 0.6;
+      }
+      const g = c.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+      g.addColorStop(0, `rgba(${col},${a})`);
+      g.addColorStop(1, `rgba(${col},0)`);
+      c.fillStyle = g;
+      c.beginPath();
+      c.arc(p.x, p.y, r, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.globalCompositeOperation = 'source-over';
+    this.raf = (alive || this.parts.length) ? requestAnimationFrame(() => this.tick()) : 0;
+  },
+};
+
+// ---------- juice: confidence milestones ----------
+const MILESTONES = [25, 50, 75, 100];
+let lastMilestone = null;  // null = not measured yet for this list, so don't celebrate on load
+function checkMilestone(pct) {
+  const reached = MILESTONES.filter(m => pct >= m).pop() || 0;
+  if (lastMilestone === null || reached < lastMilestone) { lastMilestone = reached; return; }
+  if (reached === lastMilestone) return;
+  lastMilestone = reached;
+  const big = reached === 100;
+  fx.confetti(big);
+  sfx.milestone(big);
+  restartAnim(el.pBar.parentElement, 'flash');
+  toast(big ? '100% confident — your ranking is rock solid! 🎉' : `${reached}% confident — nice, keep going!`, 3000);
+}
+
+// ---------- views ----------
+function setView(v) {
+  if (view === 'ranking' && v !== 'ranking') recordSeen();
+  if (v !== 'vote' && combo) { combo = 0; renderCombo(false); }
+  setRemoveMode(false);
+  const n = listIds().length;
+  if (v === 'vote' && n < 2) v = 'empty';
+  if (v === 'empty' && n >= 2) v = 'vote';
+  view = v;
+  el.empty.hidden = v !== 'empty';
+  el.vote.hidden = v !== 'vote';
+  el.ranking.hidden = v !== 'ranking';
+  el.footer.hidden = v !== 'vote';
+  el.viewBtn.hidden = images.size === 0;
+  el.viewBtnLabel.textContent = v === 'ranking' ? (n >= 2 ? 'Back to voting' : 'Back') : 'Ranking';
+
+  if (v === 'empty') {
+    const sub = !!activeList().ids;
+    el.emptyTitle.textContent = sub ? 'This list needs at least 2 images'
+      : n === 1 ? 'Add at least one more image' : 'Drop your images here';
+    el.emptyText.textContent = sub ? 'Add images here, or switch to another list at the top.'
+      : n === 1 ? '1 image loaded. You need two to start comparing.' : 'or click to choose files. Add as many as you like.';
+  }
+  if (v === 'vote') {
+    if (!pairValid(current)) current = pickPair();
+    const shownA = el.imgL.dataset.id, shownB = el.imgR.dataset.id;
+    if (shownA !== current.a || shownB !== current.b) showPair(current);
+    else if (!busy) timer.resume();
+  } else {
+    timer.pause();
+  }
+  if (v === 'ranking') renderRanking();
+  updateHeader();
+}
+
+function updateHeader() {
+  renderListUI();
+  const n = listIds().length;
+  el.progress.hidden = n < 2;
+  el.undoHint.disabled = history.length === 0 && removedStack.length === 0;
+  if (n < 2) return;
+  const { placing, rec, votes, conf } = progress();
+  if (placing && conf >= 1) { finishPlacing(true); return; }
+  const pct = Math.round(conf * 100);
+  el.progress.classList.toggle('placing', !!placing);
+  el.pStop.hidden = !placing;
+  el.pVotes.textContent = votes;
+  el.pRec.textContent = rec;
+  el.pLabel.textContent = placing ? `votes · placing ${placing} new` : 'recommended votes';
+  el.pConfLabel.textContent = placing ? 'placed' : 'confident';
+  el.pConf.textContent = pct + '%';
+  el.pBar.style.width = pct + '%';
+  el.pBar.style.backgroundColor = placing ? '#c792ff'
+    : pct >= 85 ? 'var(--win)' : pct >= 50 ? 'var(--accent)' : 'var(--tie)';
+  if (placing) lastMilestone = null;  // placement has its own finish celebration
+  else checkMilestone(pct);
+}
+
+// animL / animR: entrance animation class for each side ('' keeps that side still)
+async function showPair(p, animL = 'enter', animR = animL) {
+  current = p;
+  const token = ++showToken;
+  busy = true;
+  const A = images.get(p.a), B = images.get(p.b);
+  const pa = new Image(), pb = new Image();
+  pa.src = A.url; pb.src = B.url;
+  // decode() can stall while the tab is in the background, so never wait on it for long
+  if (!document.hidden) {
+    try {
+      await Promise.race([
+        Promise.all([pa.decode(), pb.decode()]),
+        new Promise(r => setTimeout(r, 700)),
+      ]);
+    } catch (_) { /* show anyway */ }
+  }
+  if (token !== showToken) return;
+  el.imgL.src = A.url; el.imgL.dataset.id = A.id; el.imgL.alt = A.name;
+  el.imgR.src = B.url; el.imgR.dataset.id = B.id; el.imgR.alt = B.name;
+  el.capL.textContent = A.name; el.capL.title = A.name;
+  el.capR.textContent = B.name; el.capR.title = B.name;
+  el.sideL.className = 'side ' + animL;
+  el.sideR.className = 'side ' + animR;
+  busy = false;
+  timer.begin();
+  if (view !== 'vote' || !el.viewer.hidden || el.placeDlg.open || el.newListDlg.open) timer.pause();
+}
+
+function vote(r) {
+  if (busy || view !== 'vote' || !current || removeMode) return;
+  busy = true;
+  const e = { a: current.a, b: current.b, r, t: Math.round(timer.elapsed()), at: Date.now() };
+  const beforeA = S.per.get(e.a).rating, beforeB = S.per.get(e.b).rating;
+  history.push(e);
+  apply(e);
+  const dA = S.per.get(e.a).rating - beforeA, dB = S.per.get(e.b).rating - beforeB;
+  bumpCombo(e);
+
+  el.sideL.className = 'side';
+  el.sideR.className = 'side';
+  const L = el.sideL.classList, R = el.sideR.classList;
+  if (r === 'a') { L.add('win'); R.add('lose'); celebrate(el.sideL, dA, el.sideR, dB); }
+  else if (r === 'b') { R.add('win'); L.add('lose'); celebrate(el.sideR, dB, el.sideL, dA); }
+  else if (r === 't') {
+    L.add('tie'); R.add('tie');
+    floatDelta(el.sideL, dA, 'even');
+    floatDelta(el.sideR, dB, 'even');
+    sfx.tie();
+    for (const s of [el.sideL, el.sideR]) {
+      const [x, y] = centerOf(s.querySelector('.frame'));
+      fx.burst(x, y, { count: 12, speed: 5, colors: ['#f0b429', '#ffe08a', '#ffffff'] });
+    }
+  } else { L.add('skip'); R.add('skip'); sfx.skip(); }
+
+  const next = pickPair(pk(e.a, e.b));
+  current = next;
+  preloadPair(next);
+  saveMeta();
+  updateHeader();
+  if (r !== 's') restartAnim(el.pVotes, 'num-bump');
+  setTimeout(() => showPair(next), r === 's' ? 220 : 330);
+}
+
+function celebrate(winSide, dWin, loseSide, dLose) {
+  sfx.pick(combo);
+  const [x, y] = centerOf(winSide.querySelector('.frame'));
+  const hot = combo >= 10;
+  fx.burst(x, y, {
+    count: 18 + Math.min(combo, 20) * 2,
+    speed: 6 + Math.min(combo, 15) * 0.3,
+    colors: hot ? ['#ffd23d', '#ff6a00', '#ff2d55', '#ffffff'] : undefined,
+  });
+  floatDelta(winSide, dWin, 'up');
+  floatDelta(loseSide, dLose, 'down');
+}
+
+// Start decoding the next pair during the vote animation so it appears instantly.
+function preloadPair(p) {
+  if (!p) return;
+  for (const id of [p.a, p.b]) {
+    const i = new Image();
+    i.src = images.get(id).url;
+    if (i.decode) i.decode().catch(() => {});
+  }
+}
+
+// Undo walks back through votes and removals in the order they happened.
+function undo() {
+  if (busy || view === 'ranking') return;
+  setRemoveMode(false);
+  const snap = removedStack[removedStack.length - 1];
+  if (snap && snap.afterLen === history.length) { restoreRemoved(removedStack.pop()); return; }
+  if (view !== 'vote' || !history.length) return;
+  const e = history.pop();
+  replay();
+  current = { a: e.a, b: e.b };
+  if (combo) { combo = Math.max(0, combo - 1); renderCombo(false); }
+  saveMeta();
+  updateHeader();
+  sfx.undo();
+  showPair(current, 'enter-back');
+  toast('Last vote undone');
+}
+
+// ---------- adding / removing ----------
+let idSeq = 0;
+function newId() {
+  return Date.now().toString(36) + (idSeq++).toString(36).padStart(3, '0') + Math.random().toString(36).slice(2, 6);
+}
+function loadImg(url) {
+  return new Promise((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = reject;
+    i.src = url;
+  });
+}
+async function makeThumb(file) {
+  let src, w, h, tmpUrl = null;
+  try {
+    src = await createImageBitmap(file);
+    w = src.width; h = src.height;
+  } catch (_) {
+    tmpUrl = URL.createObjectURL(file);
+    try { src = await loadImg(tmpUrl); w = src.naturalWidth || 320; h = src.naturalHeight || 320; }
+    finally { URL.revokeObjectURL(tmpUrl); }
+  }
+  const s = Math.min(1, 320 / Math.max(w, h));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w * s));
+  c.height = Math.max(1, Math.round(h * s));
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#1d212a';
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(src, 0, 0, c.width, c.height);
+  if (src.close) src.close();
+  return await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
+}
+function isImage(f) {
+  return (f.type && f.type.startsWith('image/')) || /\.(jpe?g|png|gif|webp|avif|bmp|svg|ico|jfif)$/i.test(f.name);
+}
+
+let importing = false;
+async function addFiles(fileList) {
+  if (importing) { toast('Still importing — please wait a moment.'); return; }
+  const existing = new Map([...images.values()].map(i => [i.name + '|' + i.size, i.id]));
+  const files = [...fileList].filter(isImage);
+  const skippedType = fileList.length - files.length;
+  if (!files.length) { toast('No image files found.'); return; }
+  const sub = activeList().ids;  // when a smaller list is open, new images join it too
+  const listAtStart = activeId;
+  const wasRanked = listIds().length >= 2 && history.some(e => e.r !== 's');
+  const newIds = [];
+  importing = true;
+  let added = 0, dupes = 0, failed = 0;
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const known = existing.get(f.name + '|' + f.size);
+      if (known) {
+        if (sub && !sub.includes(known)) { sub.push(known); ensure(known); newIds.push(known); added++; }
+        else dupes++;
+        continue;
+      }
+      if (files.length > 3) toast(`Importing ${i + 1} / ${files.length}…`, 60000);
+      let thumb;
+      try { thumb = await makeThumb(f); } catch (_) { failed++; continue; }
+      if (!thumb) { failed++; continue; }
+      const rec = { id: newId(), name: f.name, size: f.size, type: f.type, added: Date.now(), blob: f, thumb };
+      try { await tx('images', 'readwrite', s => s.put(rec)); } catch (err) { saveFail(err); }
+      images.set(rec.id, { ...rec, url: URL.createObjectURL(f), thumbUrl: URL.createObjectURL(thumb) });
+      if (sub) sub.push(rec.id);
+      ensure(rec.id);
+      existing.set(f.name + '|' + f.size, rec.id);
+      newIds.push(rec.id);
+      added++;
+    }
+  } finally {
+    importing = false;
+  }
+  const parts = [`Added ${added} image${added === 1 ? '' : 's'}`];
+  if (dupes) parts.push(`${dupes} already added`);
+  if (failed + skippedType) parts.push(`${failed + skippedType} couldn't be read`);
+  toast(parts.join(' · '));
+  if (!pairValid(current) && listIds().length >= 2) current = pickPair();
+  saveMeta();
+  setView(view === 'ranking' ? 'ranking' : 'vote');
+  // Adding to a list you've already ranked: offer to sort the new ones in first
+  if (wasRanked && newIds.length && activeId === listAtStart) openPlaceDialog(newIds);
+}
+
+// Removals are kept in memory (until the page is reloaded) so Backspace can bring them back.
+const removedStack = [];
+// In a smaller list, removing only takes the image out of that list.
+// In "All images" it deletes the image everywhere, including from every other list.
+function removeCore(id) {
+  const im = images.get(id);
+  const l = activeList();
+  syncActive();
+  const snap = { lists: cloneLists(), current, rec: null };
+  if (l.ids) {
+    l.ids = l.ids.filter(x => x !== id);
+  } else {
+    const { url, thumbUrl, ...rec } = im;
+    snap.rec = rec;
+    images.delete(id);
+    URL.revokeObjectURL(url);
+    URL.revokeObjectURL(thumbUrl);
+    tx('images', 'readwrite', s => s.delete(id)).catch(saveFail);
+    for (const o of lists) {
+      if (!o.ids || !o.ids.includes(id)) continue;
+      o.ids = o.ids.filter(x => x !== id);
+      o.history = o.history.filter(e => e.a !== id && e.b !== id);
+      if (o.current && (o.current.a === id || o.current.b === id)) o.current = null;
+    }
+  }
+  history = history.filter(e => e.a !== id && e.b !== id);
+  snap.afterLen = history.length;
+  removedStack.push(snap);
+  replay();
+  return im;
+}
+function restoreRemoved(snap) {
+  const r = snap.rec;
+  if (r) {
+    images.set(r.id, { ...r, url: URL.createObjectURL(r.blob), thumbUrl: URL.createObjectURL(r.thumb) });
+    tx('images', 'readwrite', s => s.put(r)).catch(saveFail);
+  }
+  lists = snap.lists;
+  history = activeList().history;
+  replay();
+  current = pairValid(snap.current) ? snap.current : pickPair();
+  el.imgL.dataset.id = el.imgR.dataset.id = '';  // force a fresh render of the pair
+  saveMeta();
+  sfx.undo();
+  setView('vote');
+  toast('Restored the removed image');
+}
+
+let removeMode = false;
+function setRemoveMode(on) {
+  const was = removeMode;
+  removeMode = !!on && view === 'vote' && !!current && !busy;
+  if (removeMode && !was) sfx.armed();
+  el.vote.classList.toggle('remove-mode', removeMode);
+  el.footer.classList.toggle('dim', removeMode);
+}
+
+// Remove the image on one side of the current pair and bring in a new opponent for the other.
+function removeFromPair(side) {
+  if (busy || !current) return;
+  setRemoveMode(false);
+  busy = true;
+  const goneId = current[side];
+  const keepId = side === 'a' ? current.b : current.a;
+  const im = removeCore(goneId);
+  const goneSide = side === 'a' ? el.sideL : el.sideR;
+  el.sideL.className = 'side';
+  el.sideR.className = 'side';
+  goneSide.classList.add('removed');
+  sfx.remove();
+  if (!reducedMotion) restartAnim(el.arena, 'shake');
+  const [x, y] = centerOf(goneSide.querySelector('.frame'));
+  fx.burst(x, y, { count: 30, speed: 8, size: 5, colors: ['#ef5b5b', '#ff9a9a', '#8a2a2a', '#ffffff'] });
+  if (listIds().length < 2) {
+    current = null;
+    saveMeta();
+    setTimeout(() => { busy = false; setView('empty'); }, 280);
+  } else {
+    const opp = pickPair(null, keepId).b;
+    current = side === 'a' ? { a: opp, b: keepId } : { a: keepId, b: opp };
+    preloadPair(current);
+    saveMeta();
+    updateHeader();
+    const next = current;
+    setTimeout(() => showPair(next, side === 'a' ? 'enter' : '', side === 'b' ? 'enter' : ''), 280);
+  }
+  toast(`Removed ${im.name}${activeList().ids ? ' from this list' : ''} · Backspace to undo`, 3500);
+}
+
+async function removeImage(id) {
+  const im = images.get(id);
+  if (!im) return;
+  const msg = activeList().ids
+    ? `Remove "${im.name}" from the list "${activeList().name}"?\nIt stays in All images.`
+    : `Remove "${im.name}" completely?\nIts past votes are removed too, and it's taken out of every list.`;
+  if (!confirm(msg)) return;
+  removeCore(id);
+  if (current && (current.a === id || current.b === id)) {
+    current = pickPair();
+    el.imgL.dataset.id = el.imgR.dataset.id = '';
+  }
+  saveMeta();
+  if (el.detail.open) el.detail.close();
+  setView(view);
+  toast(`Removed ${im.name}`);
+}
+
+async function clearAll() {
+  if (!confirm('Remove all images, lists, votes and stats? This cannot be undone.')) return;
+  for (const im of images.values()) { URL.revokeObjectURL(im.url); URL.revokeObjectURL(im.thumbUrl); }
+  images.clear();
+  lists = [newAllList()];
+  activeId = 'all';
+  lastMilestone = null;
+  history = [];
+  removedStack.length = 0;
+  current = null;
+  replay();
+  el.imgL.removeAttribute('src'); el.imgR.removeAttribute('src');
+  el.imgL.dataset.id = el.imgR.dataset.id = '';
+  try {
+    await tx('images', 'readwrite', s => s.clear());
+    await tx('meta', 'readwrite', s => s.clear());
+  } catch (err) { saveFail(err); }
+  setView('empty');
+}
+
+// ---------- ranking view ----------
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function fmtDur(ms) {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+function fmtSec(ms) { return (ms / 1000).toFixed(1) + 's'; }
+// Ties (e.g. a brand-new list with no votes yet) keep the list's stored order,
+// which for a new list is the ranking it was made from.
+function ranked() {
+  return listIds()
+    .map((id, i) => ({ im: images.get(id), p: S.per.get(id), i }))
+    .sort((x, y) => y.p.rating - x.p.rating || y.p.w - x.p.w || x.i - y.i);
+}
+function winPct(p) {
+  const g = p.w + p.l + p.t;
+  return g ? (p.w + p.t / 2) / g : null;
+}
+// Each decision counts for at most 15s, so breaks taken mid-vote don't inflate the stats.
+const DECISION_CAP = 15000;
+function sessionStats() {
+  const cap = t => Math.min(t, DECISION_CAP);
+  const times = history.filter(e => e.r !== 's').map(e => cap(e.t)).sort((a, b) => a - b);
+  const spent = history.reduce((s, e) => s + cap(e.t), 0);
+  const avg = times.length ? times.reduce((a, b) => a + b, 0) / times.length : 0;
+  const median = times.length ? times[Math.floor(times.length / 2)] : 0;
+  return { spent, avg, median };
+}
+
+function renderRanking() {
+  const st = sessionStats();
+  const l = activeList();
+  el.listTabs.innerHTML = lists.length < 2 ? '' : lists.map(o =>
+    `<button class="tab${o.id === activeId ? ' on' : ''}" type="button" role="tab" aria-selected="${o.id === activeId}" data-list="${o.id}">${esc(o.name)} <small>${listIds(o).length}</small></button>`
+  ).join('');
+  el.rankTitle.textContent = l.ids ? l.name : 'Ranking';
+  el.rankSub.textContent = l.ids
+    ? `Made from the top ${l.ids.length} of ${l.from || 'another list'}${l.created ? ' · ' + new Date(l.created).toLocaleDateString() : ''}`
+    : lists.length > 1 ? 'All images' : '';
+  el.deleteListBtn.hidden = !l.ids;
+  const card = (label, value, sub = '') =>
+    `<div class="card"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+  el.cards.innerHTML = [
+    card('Images', listIds().length),
+    card('Votes', S.votes, `${S.ties} tie${S.ties === 1 ? '' : 's'} · ${S.skips} skipped`),
+    card('Time spent', fmtDur(st.spent), 'each vote capped at 15s'),
+    card('Avg. decision', st.avg ? fmtSec(st.avg) : '—', st.median ? `median ${fmtSec(st.median)}` : ''),
+  ].join('');
+
+  const seen = l.seen || null;
+  el.rankList.innerHTML = ranked().map(({ im, p }, i) => {
+    const wp = winPct(p);
+    const was = seen ? seen[im.id] : undefined, now = i + 1;
+    const move = !seen ? ''
+      : was === undefined ? '<span class="move new">new</span>'
+      : was > now ? `<span class="move up" title="Up ${was - now} since you last looked">▲${was - now}</span>`
+      : was < now ? `<span class="move down" title="Down ${now - was} since you last looked">▼${now - was}</span>` : '';
+    return `<li class="row" data-open="${im.id}" style="--i:${i}">
+      <span class="rank-cell"><span class="rank">${now}</span>${move}</span>
+      <img class="thumb" src="${im.thumbUrl}" alt="" loading="lazy">
+      <div class="name"><span title="${esc(im.name)}">${esc(im.name)}</span><small>shown ${p.shown}×</small></div>
+      <div class="rating">${Math.round(p.rating)}</div>
+      <div class="record"><b class="w">${p.w}</b>–<b class="l">${p.l}</b>–<b class="t">${p.t}</b></div>
+      <div class="pct">${wp == null ? '<span>not rated yet</span>' : `<div class="bar"><i style="width:${Math.round(wp * 100)}%"></i></div><span>${Math.round(wp * 100)}%</span>`}</div>
+      <button class="icon-btn" type="button" data-remove="${im.id}" title="Remove image" aria-label="Remove ${esc(im.name)}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </li>`;
+  }).join('');
+}
+
+function openDetail(id) {
+  const im = images.get(id);
+  if (!im) return;
+  const order = ranked();
+  const rankOf = new Map(order.map((x, i) => [x.im.id, i + 1]));
+  const p = S.per.get(id);
+  const wp = winPct(p);
+  const opps = [...S.h2h.get(id)]
+    .filter(([oid]) => images.has(oid))
+    .map(([oid, r]) => ({ oid, r }))
+    .sort((x, y) => rankOf.get(x.oid) - rankOf.get(y.oid));
+  const item = ({ oid, r }) => {
+    const o = images.get(oid);
+    const rec = `${r.w}–${r.l}${r.t ? '–' + r.t : ''}`;
+    return `<li data-open="${oid}"><img src="${o.thumbUrl}" alt=""><span class="n">${esc(o.name)}<small>#${rankOf.get(oid)} · ${Math.round(S.per.get(oid).rating)}</small></span><span class="rec">${rec}</span></li>`;
+  };
+  const list = (arr, empty) => arr.length ? `<ul class="opp-list">${arr.map(item).join('')}</ul>` : `<p class="muted-note">${empty}</p>`;
+  const beat = opps.filter(x => x.r.w > 0);
+  const lost = opps.filter(x => x.r.l > 0);
+  const tied = opps.filter(x => x.r.t > 0);
+
+  el.detail.innerHTML = `
+    <div class="d-hero">
+      <img src="${im.url}" alt="${esc(im.name)}">
+      <button class="btn d-view" type="button" data-view="${id}">View in order from here</button>
+      <button class="btn d-close" type="button" data-close>Close <kbd>Esc</kbd></button>
+    </div>
+    <div class="d-body">
+      <div class="d-title"><span class="rk">#${rankOf.get(id)}</span><h2>${esc(im.name)}</h2></div>
+      <div class="d-stats">
+        <span>Score <b>${Math.round(p.rating)}</b></span>
+        <span>Record <b>${p.w}–${p.l}–${p.t}</b></span>
+        <span>Win % <b>${wp == null ? '—' : Math.round(wp * 100) + '%'}</b></span>
+        <span>Shown <b>${p.shown}×</b></span>
+      </div>
+      <div class="h2h">
+        <div class="beat"><h4>Beat (${beat.length})</h4>${list(beat, 'Hasn’t beaten anything yet.')}</div>
+        <div class="lost"><h4>Lost to (${lost.length})</h4>${list(lost, 'Hasn’t lost yet.')}</div>
+      </div>
+      ${tied.length ? `<div class="h2h"><div class="tied"><h4>Tied with (${tied.length})</h4>${list(tied, '')}</div></div>` : ''}
+      <div class="d-foot"><button class="btn danger" type="button" data-remove="${id}">Remove this image</button></div>
+    </div>`;
+  if (!el.detail.open) el.detail.showModal();
+  el.detail.scrollTop = 0;
+}
+
+function exportCSV() {
+  const q = v => /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  const rows = [['rank', 'filename', 'score', 'wins', 'losses', 'ties', 'win_percent', 'times_shown']];
+  ranked().forEach(({ im, p }, i) => {
+    const wp = winPct(p);
+    rows.push([i + 1, q(im.name), Math.round(p.rating), p.w, p.l, p.t, wp == null ? '' : (wp * 100).toFixed(1), p.shown]);
+  });
+  const blob = new Blob([rows.map(r => r.join(',')).join('\r\n') + '\r\n'], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const l = activeList();
+  const slug = l.ids ? '-' + l.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : '';
+  a.download = `image-ranking${slug}-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------- in-order viewer ----------
+const viewer = { order: [], i: 0 };
+function openViewer(startId) {
+  if (!listIds().length) return;
+  viewer.order = ranked().map(x => x.im.id);
+  viewer.i = Math.max(0, startId ? viewer.order.indexOf(startId) : 0);
+  if (el.detail.open) el.detail.close();
+  el.viewer.hidden = false;
+  timer.pause();
+  showViewerImage();
+}
+function closeViewer() {
+  el.viewer.hidden = true;
+  el.vImg.removeAttribute('src');
+  if (view === 'vote' && !busy && !document.hidden) timer.resume();
+}
+function stepViewer(d) {
+  const i = Math.min(viewer.order.length - 1, Math.max(0, viewer.i + d));
+  if (i === viewer.i) return;
+  viewer.i = i;
+  sfx.flip();
+  showViewerImage(d > 0 ? 'slide-next' : 'slide-prev');
+  if (i === 0) {
+    const [x, y] = centerOf(el.vRank);
+    fx.burst(x, y, { count: 26, speed: 6, colors: ['#f5c542', '#fff0a8', '#ffffff'] });
+  }
+}
+function showViewerImage(slide) {
+  const n = viewer.order.length;
+  const id = viewer.order[viewer.i];
+  const im = images.get(id), p = S.per.get(id);
+  el.vImg.src = im.url;
+  el.vImg.alt = im.name;
+  el.vImg.classList.remove('slide-next', 'slide-prev');
+  if (slide) restartAnim(el.vImg, slide);
+  el.vRank.innerHTML = `${viewer.i === 0 ? '👑 ' : ''}#${viewer.i + 1}<small>of ${n}</small>`;
+  el.vRank.classList.toggle('gold', viewer.i === 0);
+  el.vName.textContent = im.name;
+  el.vName.title = im.name;
+  el.vMeta.textContent = `Score ${Math.round(p.rating)} · ${p.w}–${p.l}–${p.t}`;
+  el.vPrev.disabled = viewer.i === 0;
+  el.vNext.disabled = viewer.i === n - 1;
+  el.vBar.style.width = ((viewer.i + 1) / n * 100) + '%';
+  // Preload neighbours so flipping is instant
+  for (const d of [1, -1, 2]) {
+    const o = images.get(viewer.order[viewer.i + d]);
+    if (o) new Image().src = o.url;
+  }
+}
+el.vPrev.addEventListener('click', () => stepViewer(-1));
+el.vNext.addEventListener('click', () => stepViewer(1));
+$('#vClose').addEventListener('click', closeViewer);
+$('#vDetail').addEventListener('click', () => {
+  const id = viewer.order[viewer.i];
+  closeViewer();
+  if (view !== 'ranking') setView('ranking');
+  openDetail(id);
+});
+$('#viewerBtn').addEventListener('click', () => openViewer());
+let touchX = null;
+el.vStage.addEventListener('touchstart', e => { touchX = e.touches[0].clientX; }, { passive: true });
+el.vStage.addEventListener('touchend', e => {
+  if (touchX == null) return;
+  const dx = e.changedTouches[0].clientX - touchX;
+  touchX = null;
+  if (Math.abs(dx) > 50) stepViewer(dx < 0 ? 1 : -1);
+});
+
+// ---------- new list dialog ----------
+let nlNameTouched = false;
+function openNewList() {
+  const n = listIds().length;
+  if (n < 2) { toast('You need at least 2 images to make a new list.'); return; }
+  if (!el.viewer.hidden) closeViewer();
+  if (el.detail.open) el.detail.close();
+  setRemoveMode(false);
+  timer.pause();
+  const from = activeList().name;
+  $('#nlFrom').textContent = from;
+  $('#nlFrom2').textContent = from;
+  el.nlCount.max = n;
+  el.nlOf.textContent = `of ${n}`;
+  el.nlCount.value = Math.min(20, Math.max(2, Math.round(n / 5)), n);
+  el.nlQuick.innerHTML = [5, 10, 20, 25, 50, 100].filter(q => q < n)
+    .map(q => `<button type="button" data-q="${q}">Top ${q}</button>`).join('');
+  nlNameTouched = false;
+  updateNewListPreview();
+  el.newListDlg.showModal();
+  el.nlCount.select();
+}
+function nlCountValue() {
+  const n = listIds().length;
+  return Math.min(n, Math.max(2, Math.floor(Number(el.nlCount.value) || 0)));
+}
+function updateNewListPreview() {
+  const c = nlCountValue();
+  if (!nlNameTouched) el.nlName.value = `Top ${c}`;
+  const top = ranked().slice(0, c);
+  const shown = top.slice(0, 24);
+  el.nlPreview.innerHTML = shown.map(({ im }) => `<img src="${im.thumbUrl}" alt="" title="${esc(im.name)}">`).join('') +
+    (top.length > shown.length ? `<span>+${top.length - shown.length} more</span>` : '');
+}
+el.nlCount.addEventListener('input', updateNewListPreview);
+el.nlName.addEventListener('input', () => { nlNameTouched = true; });
+el.nlQuick.addEventListener('click', e => {
+  const b = e.target.closest('[data-q]');
+  if (!b) return;
+  el.nlCount.value = b.dataset.q;
+  updateNewListPreview();
+});
+$('#nlCancel').addEventListener('click', () => el.newListDlg.close());
+$('#newListForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = el.nlName.value.trim() || `Top ${nlCountValue()}`;
+  el.newListDlg.close();
+  createList(nlCountValue(), name);
+});
+el.newListDlg.addEventListener('close', () => { if (view === 'vote' && el.viewer.hidden && !busy) timer.resume(); });
+el.newListDlg.addEventListener('click', e => { if (e.target === el.newListDlg) el.newListDlg.close(); });
+$('#newListBtn').addEventListener('click', openNewList);
+el.listSelect.addEventListener('change', () => {
+  const id = el.listSelect.value;
+  el.listSelect.blur();  // so the arrow keys go back to voting
+  switchList(id);
+});
+el.deleteListBtn.addEventListener('click', deleteList);
+
+// ---------- toast ----------
+let toastTimer;
+function toast(msg, ms = 2400) {
+  el.toast.textContent = msg;
+  el.toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.toast.classList.remove('show'), ms);
+}
+
+// ---------- events ----------
+function toggleRanking() {
+  if (images.size === 0) return;
+  setView(view === 'ranking' ? 'vote' : 'ranking');
+}
+el.sideL.addEventListener('click', () => removeMode ? removeFromPair('a') : vote('a'));
+el.sideR.addEventListener('click', () => removeMode ? removeFromPair('b') : vote('b'));
+el.footer.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const act = b.dataset.act;
+  if (act === 'undo') undo();
+  else if (act === 'remove') setRemoveMode(!removeMode);
+  else if (removeMode) setRemoveMode(false);
+  else if (act === 'rank') toggleRanking();
+  else if (act === 'viewer') openViewer();
+  else vote(act);
+});
+el.viewBtn.addEventListener('click', toggleRanking);
+el.addBtn.addEventListener('click', () => el.fileInput.click());
+el.dropzone.addEventListener('click', () => el.fileInput.click());
+el.dropzone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.fileInput.click(); } });
+el.fileInput.addEventListener('change', () => {
+  const files = [...el.fileInput.files];
+  el.fileInput.value = '';
+  if (files.length) addFiles(files);
+});
+$('#exportBtn').addEventListener('click', exportCSV);
+$('#clearBtn').addEventListener('click', clearAll);
+
+// Delegated clicks for ranking + dialog
+document.addEventListener('click', e => {
+  const rm = e.target.closest('[data-remove]');
+  if (rm) { e.stopPropagation(); removeImage(rm.dataset.remove); return; }
+  const vw = e.target.closest('[data-view]');
+  if (vw) { openViewer(vw.dataset.view); return; }
+  const ls = e.target.closest('[data-list]');
+  if (ls) { if (ls.dataset.list !== activeId) switchList(ls.dataset.list, 'ranking'); return; }
+  const op = e.target.closest('[data-open]');
+  if (op) { openDetail(op.dataset.open); return; }
+  if (e.target.closest('[data-close]')) el.detail.close();
+});
+el.detail.addEventListener('click', e => { if (e.target === el.detail) el.detail.close(); });
+
+// Keep keyboard focus off buttons so Space/arrows always vote
+document.addEventListener('mouseup', () => {
+  const a = document.activeElement;
+  if (a && a.tagName === 'BUTTON') a.blur();
+});
+
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key;
+  if (!el.viewer.hidden) {
+    const steps = { ArrowLeft: -1, ArrowUp: -1, PageUp: -1, ArrowRight: 1, ArrowDown: 1, PageDown: 1, ' ': 1, Home: -Infinity, End: Infinity };
+    if (k in steps) { e.preventDefault(); stepViewer(steps[k]); }
+    else if (k === 'Escape' || k === 'v' || k === 'V') { e.preventDefault(); closeViewer(); }
+    return;
+  }
+  if (el.detail.open || el.newListDlg.open || el.placeDlg.open) return;
+  if (e.target.closest && e.target.closest('input, textarea, select')) return;
+  if (view === 'vote' && removeMode) {
+    if (k === 'ArrowLeft' || k === 'ArrowRight') { e.preventDefault(); if (!e.repeat) removeFromPair(k === 'ArrowLeft' ? 'a' : 'b'); return; }
+    if (k === 'ArrowUp' || k === 'Escape' || k === 'ArrowDown' || k === ' ') { e.preventDefault(); setRemoveMode(false); return; }
+    setRemoveMode(false);  // any other key cancels, then does its normal job
+  }
+  if (view === 'vote') {
+    const map = { ArrowLeft: 'a', ArrowRight: 'b', ' ': 't', Spacebar: 't', ArrowDown: 's' };
+    if (map[k]) { e.preventDefault(); if (!e.repeat) { flashHint(map[k]); vote(map[k]); } return; }
+    if (k === 'ArrowUp') { e.preventDefault(); if (!e.repeat) { flashHint('remove'); setRemoveMode(true); } return; }
+  }
+  if (k === 'Backspace' && view !== 'ranking') { e.preventDefault(); if (!e.repeat) { flashHint('undo'); undo(); } return; }
+  if ((k === 'm' || k === 'M') && !e.repeat) { e.preventDefault(); setSound(!sfx.on); return; }
+  if ((k === 'r' || k === 'R') && !e.repeat) { e.preventDefault(); flashHint('rank'); toggleRanking(); }
+  if ((k === 'v' || k === 'V') && !e.repeat) { e.preventDefault(); openViewer(); }
+  if ((k === 'n' || k === 'N') && !e.repeat && listIds().length >= 2) { e.preventDefault(); openNewList(); }
+});
+
+// Drag & drop anywhere
+let dragDepth = 0;
+const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+window.addEventListener('dragenter', e => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; el.dragOverlay.hidden = false; });
+window.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+window.addEventListener('dragleave', e => { if (!hasFiles(e)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) el.dragOverlay.hidden = true; });
+window.addEventListener('drop', e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  el.dragOverlay.hidden = true;
+  if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+});
+
+// ---------- boot ----------
+async function init() {
+  let meta = null;
+  try {
+    db = await openDB();
+    const recs = (await tx('images', 'readonly', s => s.getAll())) || [];
+    meta = await tx('meta', 'readonly', s => s.get('state'));
+    recs.sort((a, b) => a.added - b.added);
+    for (const r of recs) {
+      images.set(r.id, { ...r, url: URL.createObjectURL(r.blob), thumbUrl: URL.createObjectURL(r.thumb) });
+    }
+  } catch (err) {
+    console.error(err);
+    db = null;
+    toast('Auto-save is unavailable in this browser — progress will be lost on refresh.', 5000);
+  }
+  if (meta && Array.isArray(meta.lists) && meta.lists.length) {
+    lists = meta.lists;
+    activeId = meta.active;
+  } else if (meta && Array.isArray(meta.history)) {
+    // saves from before lists existed: everything becomes "All images"
+    lists = [{ ...newAllList(), history: meta.history, current: meta.current || null }];
+  }
+  if (!lists.some(l => l.id === 'all')) lists.unshift(newAllList());
+  for (const l of lists) {
+    if (l.ids) l.ids = l.ids.filter(id => images.has(id));
+    const member = id => images.has(id) && (!l.ids || l.ids.includes(id));
+    l.history = (l.history || []).filter(e => member(e.a) && member(e.b));
+  }
+  if (!lists.some(l => l.id === activeId)) activeId = 'all';
+  history = activeList().history;
+  current = activeList().current;
+  replay();
+  if (!pairValid(current)) current = null;
+  const totalVotes = lists.reduce((s, l) => s + l.history.length, 0);
+  if (images.size && totalVotes) {
+    toast(`Welcome back — ${images.size} images, ${totalVotes} votes${lists.length > 1 ? ` in ${lists.length} lists` : ''} restored`);
+  }
+  setView(listIds().length >= 2 ? 'vote' : 'empty');
+}
+
+window.__ranker = { addFiles, get S() { return S; }, get history() { return history; }, get lists() { return lists; }, get activeId() { return activeId; } };
+init();
+})();
+</script>
+</body>
+</html>
